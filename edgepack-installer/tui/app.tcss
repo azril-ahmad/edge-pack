@@ -1,0 +1,619 @@
+/* tui/app.tcss — Textual CSS for the EdgePack TUI installer */
+
+/* ═══════════════════════════════════════════════
+   Global
+   ═══════════════════════════════════════════════ */
+Screen {
+    background: $surface;
+}
+
+/* ═══════════════════════════════════════════════
+   About modal
+   ═══════════════════════════════════════════════ */
+AboutScreen {
+    align: center middle;
+}
+
+#about-dialog {
+    width: 62;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#about-title {
+    color: $accent;
+    text-style: bold;
+    content-align: center middle;
+    width: 1fr;
+    margin-bottom: 1;
+}
+
+#about-body {
+    color: $text;
+    width: 1fr;
+    margin: 1 0;
+}
+
+#about-footer-text {
+    color: $text-muted;
+    width: 1fr;
+    margin: 1 0;
+}
+
+#about-actions {
+    align: center middle;
+    margin-top: 1;
+    height: 3;
+}
+
+/* ═══════════════════════════════════════════════
+   Sudo authentication modal
+   ═══════════════════════════════════════════════ */
+SudoAuthScreen {
+    align: center middle;
+}
+
+#auth-dialog {
+    width: 60;
+    height: auto;
+    border: thick $warning;
+    background: $surface;
+    padding: 1 2;
+}
+
+#auth-title {
+    color: $warning;
+    text-style: bold;
+    content-align: center middle;
+    width: 1fr;
+    margin-bottom: 1;
+}
+
+#auth-msg {
+    color: $text;
+    width: 1fr;
+    margin: 1 0;
+}
+
+#auth-password {
+    width: 1fr;
+    margin: 1 0;
+}
+
+#auth-error {
+    color: $error;
+    text-style: bold;
+    width: 1fr;
+    height: auto;
+}
+
+#auth-actions {
+    align: center middle;
+    margin-top: 1;
+    height: 3;
+}
+
+#auth-actions Button {
+    margin: 0 1;
+}
+
+/* ═══════════════════════════════════════════════
+   Installation failure modal
+   ═══════════════════════════════════════════════ */
+InstallFailedScreen {
+    align: center middle;
+}
+
+UnsupportedPlatformScreen {
+    align: center middle;
+}
+
+#error-dialog {
+    width: 60;
+    height: auto;
+    border: thick $error;
+    background: $surface;
+    padding: 1 2;
+}
+
+#error-title {
+    color: $error;
+    text-style: bold;
+    content-align: center middle;
+    width: 1fr;
+    margin-bottom: 1;
+}
+
+#error-msg {
+    color: $text;
+    width: 1fr;
+    margin: 1 0;
+}
+
+#error-actions {
+    align: center middle;
+    margin-top: 1;
+    height: 3;
+}
+
+/* ═══════════════════════════════════════════════
+   Restart prompt modal
+   ═══════════════════════════════════════════════ */
+RestartPromptScreen {
+    align: center middle;
+}
+
+#restart-dialog {
+    width: 58;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#restart-title {
+    color: $success;
+    text-style: bold;
+    content-align: center middle;
+    width: 1fr;
+    margin-bottom: 1;
+}
+
+#restart-msg {
+    color: $text;
+    content-align: center middle;
+    width: 1fr;
+    margin: 1 0;
+}
+
+#restart-actions {
+    align: center middle;
+    margin-top: 1;
+    height: 3;
+}
+
+#restart-actions Button {
+    margin: 0 1;
+}
+
+/* ═══════════════════════════════════════════════
+   Too-small terminal overlay
+   ═══════════════════════════════════════════════ */
+#too-small-message {
+    width: 1fr;
+    height: 1fr;
+    color: $warning;
+    content-align: center middle;
+    text-align: center;
+    text-style: bold;
+    background: $surface;
+}
+
+Header {
+    background: $primary;
+    color: $text;
+}
+
+Footer {
+    background: $primary-darken-2;
+}
+
+/* ═══════════════════════════════════════════════
+   Step title banner
+   ═══════════════════════════════════════════════ */
+#step2-title,
+#step3-title,
+#step4-title {
+    text-style: bold;
+    padding: 1 2;
+    color: $accent;
+    background: $accent 8%;
+}
+
+/* ═══════════════════════════════════════════════
+   Step 1 — 3-box layout
+   ═══════════════════════════════════════════════ */
+#step1-main {
+    height: 1fr;
+    padding: 1;
+}
+
+/* ── Left panel ── */
+#step1-left {
+    width: 22%;
+    min-width: 22;
+    border: round $primary 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
+    padding: 1 1;
+    margin-right: 1;
+}
+
+.info-label {
+    color: $text-muted;
+    text-style: bold;
+    margin-top: 1;
+}
+
+.info-value {
+    color: $text;
+    padding-left: 1;
+}
+
+.info-cpu-sku {
+    color: $text-muted;
+    padding-left: 1;
+    text-style: italic;
+}
+
+.info-unrecognized {
+    color: $warning;
+    text-style: italic;
+}
+
+.info-ok  { color: $success; }
+.info-warn { color: $warning; }
+
+/* ── Right column ── */
+#step1-right {
+    width: 1fr;
+}
+
+#step1-scroll {
+    height: 1fr;
+    border: round $primary 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
+    padding: 0 1;
+}
+
+#step1-notes-box {
+    height: auto;
+    border: round $primary 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
+    padding: 1 1;
+    margin-top: 1;
+}
+
+.note-line {
+    color: $text-muted;
+}
+
+/* ── Titled border box wrapping each selection group ── */
+.group-box {
+    border: round $primary 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+/* ── RadioSet: horizontal layout so all options sit in one row ── */
+.group-box RadioSet {
+    layout: horizontal;
+    border: none;
+    background: transparent;
+    height: auto;
+    padding: 0;
+    margin: 0;
+}
+
+/* Unselected RadioButton — muted, thin neutral border */
+.group-box RadioButton {
+    width: auto;
+    min-width: 18;
+    border-left: thick $surface-lighten-2;
+    padding: 0 2;
+    margin-right: 1;
+    color: $text-muted;
+    background: transparent;
+}
+
+/* SELECTED RadioButton — bold accent text + thick accent border, NO background.
+   The ● circle is the sole selection indicator. */
+.group-box RadioButton.-on {
+    border-left: thick $accent;
+    color: $accent;
+    text-style: bold;
+    background: transparent;
+}
+
+/* Circle area: always transparent so no panel-coloured box appears */
+.group-box RadioButton > .toggle--button {
+    background: transparent;
+}
+
+/* Selected circle uses accent colour to match the label */
+.group-box RadioButton.-on > .toggle--button {
+    background: transparent;
+    color: $accent;
+}
+
+/* The RadioSet manages focus internally via the .-selected class on the active
+   child button. Show cursor position with a near-white border + bold text — no background. */
+.group-box RadioSet:focus > RadioButton.-selected {
+    border-left: thick $foreground;
+    color: $text;
+    text-style: bold;
+}
+
+/* When the cursor is also the checked option, keep accent styling on top */
+.group-box RadioSet:focus > RadioButton.-selected.-on {
+    border-left: thick $accent;
+    color: $accent;
+}
+
+/* Reverse-video on the label text marks the cursor position without a filled background. */
+.group-box RadioSet:focus > RadioButton.-selected > .toggle--label {
+    text-style: reverse;
+}
+
+.group-box RadioSet:focus > RadioButton.-selected.-on > .toggle--label {
+    text-style: reverse;
+}
+
+.group-box RadioSet:blur > RadioButton.-selected > .toggle--label {
+    background: transparent;
+}
+
+/* Constraint-disabled RadioButton — dim + strikethrough makes it unmistakably unavailable */
+.group-box RadioButton:disabled {
+    color: $text-disabled;
+    text-style: dim strike;
+    border-left: thick $surface;
+}
+
+#step1-actions {
+    margin: 1 0;
+    align: right middle;
+}
+
+/* ═══════════════════════════════════════════════
+   Step 2 — Profile review & add-on selection
+   ═══════════════════════════════════════════════ */
+#step2-outer {
+    height: 1fr;
+    padding: 1 2;
+}
+
+/* ── Base profile box ── */
+#s2-base-box {
+    border: round $primary 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
+    height: auto;
+    padding: 1 1;
+    margin-bottom: 1;
+}
+
+.base-pkg-row {
+    color: $text-muted;
+}
+
+#s2-base-description {
+    color: $text;
+    margin-top: 1;
+}
+
+/* ── Optional add-ons ── */
+#s2-addons-label {
+    color: $text-muted;
+    text-style: bold;
+    padding: 0 1;
+    margin-bottom: 0;
+}
+
+#s2-addons-scroll {
+    height: 1fr;
+    border: round $primary 60%;
+    padding: 0 1;
+    margin-top: 0;
+    margin-bottom: 1;
+    /* Keep the scrollbar visible at rest so users can tell the list scrolls. */
+    scrollbar-gutter: stable;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $surface-darken-2;
+    scrollbar-color: $accent;
+    scrollbar-color-hover: $accent-lighten-1;
+    scrollbar-color-active: $accent-lighten-1;
+}
+
+#s2-addons-rows {
+    height: auto;
+}
+
+.addon-card {
+    height: auto;
+    margin-top: 1;
+}
+
+.addon-category-header {
+    text-style: bold underline;
+    color: $text;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+.addon-category-header-first {
+    margin-top: 0;
+}
+
+.addon-card Checkbox {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+/* Bracket outline: always visible in foreground text colour */
+.addon-card Checkbox > .toggle--bracket {
+    color: $foreground;
+}
+
+/* Unchecked: invisible tick blending into the dark background */
+.addon-card Checkbox > .toggle--button {
+    color: $background;
+    background: transparent;
+}
+
+/* Checked: bold green tick on transparent (dark) background */
+.addon-card Checkbox.-on > .toggle--button {
+    color: $success;
+    background: transparent;
+    text-style: bold;
+}
+
+.addon-packages {
+    color: $text-muted;
+    padding-left: 4;
+}
+
+.addon-none {
+    color: $text-muted;
+    padding: 1;
+}
+
+/* ── About panel ── */
+#s2-about-box {
+    border: round $primary 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
+    height: 4;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#s2-about-text {
+    color: $text-muted;
+    text-style: italic;
+}
+
+/* ── Selected packages summary ── */
+#s2-selected-summary {
+    color: $accent;
+    padding: 0 1;
+    height: 1;
+}
+
+/* ── Action buttons ── */
+#step2-actions {
+    height: 3;
+    margin: 1 0;
+    align: right middle;
+}
+
+/* ═══════════════════════════════════════════════
+   Step 3 — Summary
+   ═══════════════════════════════════════════════ */
+#step3-outer {
+    height: 1fr;
+    padding: 0 2;
+}
+
+#step3-scroll {
+    height: 1fr;
+    border: solid $primary 40%;
+    padding: 1;
+}
+
+#summary-content {
+    height: auto;
+}
+
+.summary-section {
+    margin-top: 1;
+    text-style: bold;
+    color: $accent;
+}
+
+.summary-group { color: $text; }
+.summary-pkg   { color: $text-muted; }
+
+.summary-indent {
+    padding-left: 2;
+    color: $text-muted;
+}
+
+.summary-total {
+    margin-top: 1;
+    color: $success;
+    text-style: bold;
+}
+
+.summary-warn-header {
+    color: $warning;
+    text-style: bold;
+    margin-top: 1;
+}
+
+.summary-warn {
+    color: $warning;
+    padding-left: 2;
+}
+
+#step3-actions {
+    height: 3;
+    margin: 1 0;
+    align: right middle;
+}
+
+/* ═══════════════════════════════════════════════
+   Step 4 — Installation
+   ═══════════════════════════════════════════════ */
+#step4-outer {
+    padding: 0 2;
+    height: 1fr;
+}
+
+/* Package status list */
+#pkg-list-heading {
+    color: $text;
+    text-style: bold;
+    padding: 0 1;
+    margin-bottom: 0;
+}
+
+#pkg-status-list {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.pkg-status-row {
+    height: 1;
+    color: $text-muted;
+}
+
+/* Progress bar & status label */
+#install-progress {
+    margin: 0;
+}
+
+#install-status-label {
+    color: $text-muted;
+    height: 1;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+/* Log */
+#install-log {
+    height: 1fr;
+    border: solid $primary 40%;
+    background: $surface-darken-1;
+}
+
+#step4-actions {
+    margin: 1 0;
+    align: right middle;
+}
+
+/* ── Shared action row spacing ── */
+#step1-actions Button,
+#step2-actions Button,
+#step3-actions Button,
+#step4-actions Button {
+    margin-left: 1;
+}

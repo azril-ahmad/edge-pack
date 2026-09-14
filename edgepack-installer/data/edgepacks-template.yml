@@ -1,0 +1,161 @@
+version: "0.2-0002" # edgepack manifest version . version for this file in <edgepack-UI compatible version>-<versions for this yml file change>
+updated_datetime: "2026-06-26T05:20:00Z"  # date -u +"%Y-%m-%dT%H:%M:%SZ" 
+
+about:
+  product_name: "Intel Edgepack Installer"
+  description: |
+    A terminal-based wizard for installing Intel EdgePack
+    software packages on supported Linux platforms.
+
+    The installer auto-detects your hardware platform and OS,
+    then guides you through profile selection, add-on packages,
+    an installation summary, and live apt progress.
+  license: "License placeholder"
+  built_with: "Textual (https://textual.textualize.io)"
+
+os_variant:
+  ubuntu_noble:
+    display_name: "Ubuntu 24.04"
+    description: "Ubuntu 24.04 (Noble Numbat)"
+    version_id: "24.04"
+    min_version: "24.04"
+    min_kernel_version: "7.0"
+    require_ubuntu_kernel: true
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    repositories:
+      edgepack_external:
+        repository_url: "https://apt.repos.intel.com/edgepack/"
+        repository_key: "https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
+        repository_dist: "noble"
+        repository_components:
+          - "stable"
+        pin_priority: 1001
+
+  ubuntu_resolute:
+    display_name: "Ubuntu 26.04"
+    description: "Ubuntu 26.04 (Resolute Raccoon)"
+    version_id: "26.04"
+    min_version: "26.04"
+    min_kernel_version: "7.0"
+    require_ubuntu_kernel: true
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    repositories:
+      edgepack_external:
+        repository_url: "https://apt.repos.intel.com/edgepack/"
+        repository_key: "https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
+        repository_dist: "resolute"
+        repository_components:
+          - "stable"
+        pin_priority: 1001
+
+platforms:
+  ptl:
+    display_name: "Panther Lake"
+    description: "Intel Panther Lake"
+    model_names:   # to autodetect for machine model, model keywords from  lscpu command    lscpu | grep "Model name"
+      # Core Ultra X (High-Power Premium)
+      - "338H"
+      - "358H"
+      - "368H"
+      - "388H"
+      # Core Ultra H-Series
+      - "325H"
+      - "345H"
+      - "355H"
+      - "375H"
+  wcl:
+    display_name: "Wildcat Lake"
+    description: "Intel Wildcat Lake"
+    model_names:
+      - "320"
+      - "330"
+      - "350"  
+
+# updated profiles with base and other 
+base-profiles:
+  base-standard:
+    display_name: "Intel Edge Base Profile"
+    description: "Validated core Intel graphics/media packages, including the platform-enablement DKMS driver, for Ubuntu LTS."
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    supported_os_variants:
+      - "ubuntu_noble"
+      - "ubuntu_resolute"
+    meta_packages: 
+      - intel-edge-base-standard
+      
+  base-realtime:
+    display_name: "Intel Edge Realtime Profile"
+    description: "Intel Edge Realtime Profile with Intel Realtime Kernel"
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    supported_os_variants:
+      - "disabled"
+    meta_packages: 
+      - intel-edge-base-realtime
+
+profiles:
+
+  ffmpeg:
+    display_name: "FFmpeg"
+    description: "FFmpeg multimedia framework with Intel GPU support."
+    category: "Application/Tools"
+    base-profiles: # only available for these profile
+      - base-standard
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    meta_packages: # additional package to install on top of base profiles
+      - intel-edge-media-ffmpeg
+
+  gstreamer:
+    display_name: "GStreamer"
+    description: "GStreamer multimedia framework with Intel GPU support."
+    category: "Application/Tools"
+    base-profiles: # only available for these profile
+      - base-standard
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    meta_packages: # additional package to install on top of base profiles
+      - intel-edge-media-gst
+
+  npu:
+    display_name: "NPU"
+    description: "Group of software components and ingredients to enable Intel's Neural Processing Unit (NPU) technology on Edge platforms."
+    category: "Intel Technologies"
+    base-profiles: # only available for these profile
+      - base-standard
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    supported_os_variants:
+      - "ubuntu_noble"
+    meta_packages: # additional package to install on top of base profiles
+      - intel-edge-npu
+    prerequisites: 
+      ubuntu_noble:
+        repositories:
+          - repository_url: "https://snapshot.ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu/20260606T100000Z"
+            repository_dist: "noble"
+            repository_components:
+              - "main"
+            repository_key: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x0c0e6af955ce463c03fc51574d098d70afbe5e1f"
+
+  manageability:
+    display_name: "Manageability"
+    description: "Group of software components and ingredients to enable Intel's vPRO Manageability on Edge platforms."
+    category: "Intel Technologies"
+    base-profiles: # only available for these profile
+      - base-standard
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    meta_packages: # additional package to install on top of base profiles
+      - intel-edge-manageability
