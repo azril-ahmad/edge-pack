@@ -1,0 +1,47 @@
+intel-edge-ipu (1.0~noble8) noble; urgency=medium
+
+  * Renamed ipu-dkms to edge-ipu-dkms.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 06 Aug 2026 15:29:14 +0800
+
+intel-edge-ipu (1.0~noble7) noble; urgency=medium
+
+  * Update dependencies to include all binaries from ipu7-camera-hal, ipu7-camera-bins and icamerasrc (gst-plugins-icamera).
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Tue, 04 Aug 2026 15:37:51 +0800
+
+intel-edge-ipu (1.0~noble6) noble; urgency=medium
+
+  * Added ipu-dkms dependency.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 3 Aug 2026 00:00:00 +0000
+
+intel-edge-ipu (1.0~noble5) noble; urgency=medium
+
+  * Removed dependencies version to get always latest version from Intel PPA.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 16 Jul 2026 00:00:00 +0000
+
+intel-edge-ipu (1.0~noble4) noble; urgency=medium
+
+  * Change architecture to amd64.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Mon, 06 Jul 2026 00:00:00 +0000
+
+intel-edge-ipu (1.0~noble3) noble; urgency=medium
+
+  * Add exact dependency versions.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Wed, 02 Jul 2026 00:00:00 +0000
+
+intel-edge-ipu (1.0~noble2) noble; urgency=medium
+
+  * Initial test build.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 22 May 2026 00:00:00 +0000
+
+intel-edge-ipu (1.0~noble1) noble; urgency=medium
+
+  * Initial release.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 15 May 2026 13:00:00 +0000

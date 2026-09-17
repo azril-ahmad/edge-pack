@@ -1,0 +1,88 @@
+intel-edge-base (1.0~noble14) noble; urgency=medium
+
+  * Renamed dkms meta-packages, removed intel-edge-media-ffmpeg and intel-edge-media-gst.
+
+-- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 06 Aug 2026 15:13:02 +0800
+
+intel-edge-base (1.0~noble13) noble; urgency=medium
+
+  * Remove intel-edge-graphics-remote.
+
+ -- Yep Mun Chun <mun.chun.yep@intel.com>  Wed, 05 Aug 2026 20:48:00 +0800
+
+intel-edge-base (1.0~noble12) noble; urgency=medium
+
+  * Added dkms related dependencies.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 03 Aug 2026 00:00:00 +0000
+
+intel-edge-base (1.0~noble11) noble; urgency=medium
+
+  * Remove intel-edge-base-realtime as not supported in noble.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Fri, 31 Jul 2026 00:00:00 +0000
+
+intel-edge-base (1.0~noble10) noble; urgency=medium
+
+  * Fix issue on updating GRUB when reboot.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 27 Jul 2026 00:00:00 +0000
+
+intel-edge-base (1.0~noble9) noble; urgency=medium
+
+  * Update standard and realtime to new media and graphics metapackages.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 16 Jul 2026 00:00:00 +0000
+
+intel-edge-base (1.0~noble8) noble; urgency=medium
+
+  * Add linux-firmware to standard and realtime package.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 16 Jul 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble7) noble; urgency=medium
+
+  * Removed dependencies version to get always latest version from Intel PPA.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 16 Jul 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble6) noble; urgency=medium
+
+  * Bumped version of dependency packages.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Tue, 7 Jul 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble5) noble; urgency=medium
+
+  * Make intel-edge-base-realtime and intel-edge-base-standard mutually
+    exclusive via Conflicts/Replaces so installing one removes the other.
+  * Add intel-edge-base-realtime.postrm to strip the realtime kernel boot
+    parameters when the realtime profile is removed.
+  * Add intel-edge-base-standard.postinst to restore the default kernel boot
+    parameters when the standard profile is installed.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Wed, 1 Jul 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble4) noble; urgency=medium
+
+  * Update metapackage to intel-edge-base-standard and intel-edge-base-realtime with postinst script.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 25 Jun 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble3) noble; urgency=medium
+
+  * Update metapackage to non-realtime and realtime.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 18 Jun 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble2) noble; urgency=medium
+
+  * Update each metapackage dependency to 1.0~noble2.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 22 May 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble1) noble; urgency=medium
+
+  * Initial release.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Sun, 18 May 2026 12:00:00 +0000

@@ -1,0 +1,60 @@
+#!/bin/sh
+# postrm script for intel-edge-graphics-core
+#
+# see: dh_installdeb(1)
+
+set -e
+
+GRUB_DEFAULT="/etc/default/grub"
+
+# Kernel boot parameters required for graphics core deployment (xe driver only)
+KERNEL_PARAMS="xe.force_probe=* modprobe.blacklist=i915"
+
+remove_grub_cmdline() {
+    [ -f "$GRUB_DEFAULT" ] || return 1
+
+    # Read GRUB_CMDLINE_LINUX value without quotes (separate from LINUX_DEFAULT).
+    current="$(sed -n -E 's/^GRUB_CMDLINE_LINUX="(.*)"/\1/p' "$GRUB_DEFAULT" | head -n1)"
+
+    new="$current"
+    for param in $KERNEL_PARAMS; do
+        key="${param%%=*}"
+        # Remove this key whether it has a value or appears bare.
+        new="$(printf '%s' "$new" | sed -E "s/(^| )${key}(=[^ ]*)?( |\$)/ /g")"
+    done
+
+    # Normalize whitespace.
+    new="$(printf '%s' "$new" | sed -E 's/^ +| +$//g; s/  +/ /g')"
+
+    # Nothing changed.
+    [ "$new" != "$current" ] || return 1
+
+    esc="$(printf '%s' "$new" | sed -e 's/[&|\\]/\\&/g')"
+    sed -i -E "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"${esc}\"|" "$GRUB_DEFAULT"
+
+    return 0
+}
+
+case "$1" in
+    remove)
+        if remove_grub_cmdline; then
+            if command -v update-grub >/dev/null 2>&1; then
+                update-grub
+            elif command -v grub-mkconfig >/dev/null 2>&1; then
+                grub-mkconfig -o /boot/grub/grub.cfg
+            fi
+        fi
+        ;;
+
+    purge|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

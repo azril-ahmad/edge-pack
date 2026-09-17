@@ -1,0 +1,38 @@
+#!/bin/sh
+# postrm script for intel-edge-base-standard
+#
+# see: dh_installdeb(1)
+
+set -e
+
+GRUB_CFG="/boot/grub/grub.cfg"
+# Flavour-order override installed by this package's postinst.
+GRUB_FLAVOUR_DROPIN="/etc/default/grub.d/intel-edge-base-flavour.cfg"
+
+case "$1" in
+    remove|purge)
+        # Remove our flavour-order override so GRUB reverts to the kernel
+        # package's default ordering (e.g. 99-realtime.cfg). Not done on upgrade,
+        # where the new version re-establishes it.
+        if [ -f "$GRUB_FLAVOUR_DROPIN" ]; then
+            rm -f "$GRUB_FLAVOUR_DROPIN"
+            if command -v update-grub >/dev/null 2>&1; then
+                update-grub
+            elif command -v grub-mkconfig >/dev/null 2>&1; then
+                grub-mkconfig -o "$GRUB_CFG"
+            fi
+        fi
+        ;;
+
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

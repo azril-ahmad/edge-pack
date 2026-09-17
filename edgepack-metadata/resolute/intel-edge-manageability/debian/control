@@ -1,0 +1,17 @@
+Source: intel-edge-manageability
+Section: metapackages
+Priority: optional
+Maintainer: Tan Wen Yan <wen.yan.tan@intel.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.1
+Rules-Requires-Root: no
+
+Package: intel-edge-manageability
+Architecture: amd64
+Depends:
+ lms,
+ rpc-go,
+ edge-mei-dkms
+Description: Intel Edge manageability metapackage
+ Installs the Intel Edge manageability software stack.
+ This package is a metapackage and contains no payload files.

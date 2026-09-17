@@ -1,0 +1,41 @@
+intel-edge-manageability (1.0~resolute5) resolute; urgency=medium
+
+  * Renamed mei-dkms to edge-mei-dkms.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 06 Aug 2026 15:34:32 +0800
+
+intel-edge-manageability (1.0~resolute4) resolute; urgency=medium
+
+  * Added mei-dkms dependency.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 03 Aug 2026 00:00:00 +0000
+
+intel-edge-manageability (1.0~resolute3) resolute; urgency=medium
+
+  * Removed dependencies version to get always latest version from Intel PPA.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 16 Jul 2026 00:00:00 +0000
+
+intel-edge-manageability (1.0~resolute2) resolute; urgency=medium
+
+  * Update rpc-go to 2.52.2-1ppa1~resolute1.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Tue, 15 Jul 2026 00:00:00 +0000
+
+intel-edge-manageability (1.0~resolute1) resolute; urgency=medium
+
+  * Add exact dependency versions.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Mon, 06 Jul 2026 00:00:00 +0000
+
+intel-edge-manageability (1.0~noble2) noble; urgency=medium
+
+  * Initial test build.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Tue, 26 May 2026 00:00:00 +0000
+
+intel-edge-manageability (1.0~noble1) noble; urgency=medium
+
+  * Initial release.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Tue, 20 May 2026 12:00:00 +0000

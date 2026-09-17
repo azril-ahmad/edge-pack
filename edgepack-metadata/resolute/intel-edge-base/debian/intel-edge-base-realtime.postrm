@@ -1,0 +1,80 @@
+#!/bin/sh
+# postrm script for intel-edge-base-realtime
+#
+# see: dh_installdeb(1)
+
+set -e
+
+# Kernel boot parameters that were added by the postinst and must be
+# stripped again when the realtime profile is removed (e.g. when the user
+# switches to intel-edge-base-standard).
+KERNEL_PARAMS="intel_iommu=on iommu=pt isolcpus=1,2 rcu_nocbs=1,2 rcu_nocb_poll irqaffinity=0 kthread_cpus=0 clocksource=tsc tsc=reliable hpet=disable nosmt numa_balancing=disable nmi_watchdog=0 nowatchdog efi=noruntime console=ttyS0,115200n8"
+
+GRUB_DEFAULT="/etc/default/grub"
+GRUB_FLAVOUR_DROPIN="/etc/default/grub.d/intel-edge-base-flavour.cfg"
+
+remove_grub_cmdline() {
+    [ -f "$GRUB_DEFAULT" ] || return 1
+
+    # Read the current value of GRUB_CMDLINE_LINUX (without quotes).
+    current="$(sed -n -E 's/^GRUB_CMDLINE_LINUX="(.*)"/\1/p' "$GRUB_DEFAULT" | head -n1)"
+
+    new="$current"
+    for param in $KERNEL_PARAMS; do
+        key="${param%%=*}"
+        # Drop any occurrence of the parameter key (with or without a value),
+        # restoring the kernel default for that option.
+        new="$(printf '%s' "$new" | sed -E "s/(^| )${key}(=[^ ]*)?( |\$)/ /g")"
+    done
+
+    # Normalise whitespace.
+    new="$(printf '%s' "$new" | sed -E 's/^ +| +$//g; s/  +/ /g')"
+
+    # Nothing to change?
+    [ "$new" != "$current" ] || return 1
+
+    # Escape characters that are special to sed's replacement string.
+    esc="$(printf '%s' "$new" | sed -e 's/[&|\\]/\\&/g')"
+    sed -i -E "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"${esc}\"|" "$GRUB_DEFAULT"
+
+    return 0
+}
+
+case "$1" in
+    remove|purge)
+        changed=0
+
+        # Strip the realtime kernel parameters we added.
+        if remove_grub_cmdline; then
+            changed=1
+        fi
+
+        # Remove our flavour-order override so GRUB reverts to the default
+        # ordering. Not done on upgrade, where the new version re-establishes it.
+        if [ -f "$GRUB_FLAVOUR_DROPIN" ]; then
+            rm -f "$GRUB_FLAVOUR_DROPIN"
+            changed=1
+        fi
+
+        # Regenerate grub.cfg once so the changes take effect on the next boot.
+        if [ "$changed" = 1 ]; then
+            if command -v update-grub >/dev/null 2>&1; then
+                update-grub
+            elif command -v grub-mkconfig >/dev/null 2>&1; then
+                grub-mkconfig -o /boot/grub/grub.cfg
+            fi
+        fi
+        ;;
+
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

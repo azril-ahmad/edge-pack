@@ -1,0 +1,67 @@
+intel-edge-graphics (1.0~noble11) noble; urgency=medium
+
+  * Renamed graphics-dkms to edge-gfx-dkms.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 06 Aug 2026 10:48:04 +0800
+
+intel-edge-graphics (1.0~noble10) noble; urgency=medium
+
+  * Removed intel-edge-graphics-remote and updated dependencies.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Tue, 04 Aug 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble9) noble; urgency=medium
+
+  * Added dkms related dependency.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 03 Aug 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble8) noble; urgency=medium
+
+  * Split metapackage into core, display, remote, and sriov.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 16 Jul 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble7) noble; urgency=medium
+
+  * Removed xe-dkms from intel-edge-graphics-core.
+  * Added postinst and postrm for intel-edge-graphics-sriov and core to update kernel param.
+  * Update from intel-edge-graphics-all to dev.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Tue, 7 Jul 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble6) noble; urgency=medium
+
+  * Update xe-dkms to intel-edge-graphics-core.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 6 Jul 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble5) noble; urgency=medium
+
+  * Update meta-packages architecture to amd64.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Wed, 1 Jul 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble4) noble; urgency=medium
+
+  * Update intel-edge-graphics packages and added new intel-edge-graphics-all.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 11 Jun 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble3) noble; urgency=medium
+
+  * new package for graphics core, display and sriov.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Tue, 9 Jun 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble2) noble; urgency=medium
+
+  * Fix graphics qemu user dependency.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 22 May 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble1) noble; urgency=medium
+
+  * Initial release.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 15 May 2026 13:30:00 +0000

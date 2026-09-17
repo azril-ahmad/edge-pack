@@ -1,0 +1,117 @@
+Source: intel-edge-graphics
+Section: metapackages
+Priority: optional
+Maintainer: Tan Wen Yan <wen.yan.tan@intel.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: intel-edge-graphics-core
+Architecture: amd64
+Depends:
+# from mesa
+ libegl-mesa0,
+ libegl1-mesa-dev,
+ libgbm-dev,
+ libgbm1,
+ libgl1-mesa-dev,
+ libgl1-mesa-dri,
+ libgles2-mesa-dev,
+ libglx-mesa0,
+ mesa-common-dev,
+ mesa-drm-shim,
+ mesa-libgallium,
+ mesa-opencl-icd,
+ mesa-vulkan-drivers,
+# from libdrm (installed from Ubuntu repo)
+ libdrm2,
+# from dkms
+ edge-gfx-dkms
+Description: Intel Edge graphics core runtime metapackage
+ Installs the core Intel Edge graphics runtime stack for headless or CLI systems.
+ This metapackage provides Mesa and GPU userspace dependencies without display
+ server components such as Wayland, Xorg, or desktop compositors.
+
+Package: intel-edge-graphics-display
+Architecture: amd64
+Depends:
+ intel-edge-graphics-core,
+# from wayland
+ libwayland-bin,
+ libwayland-client0,
+ libwayland-cursor0,
+ libwayland-dev,
+ libwayland-doc,
+ libwayland-egl-backend-dev,
+ libwayland-egl1,
+ libwayland-server0,
+# from mutter
+ gir1.2-mutter-18,
+ libmutter-18-0,
+ libmutter-18-dev,
+ libmutter-test-18,
+ mutter,
+ mutter-18-tests,
+ mutter-common,
+ mutter-common-bin,
+# from weston
+ libweston-14-0,
+ libweston-14-dev,
+ weston,
+# from xorg-server
+ xnest,
+ xorg-server-source,
+ xserver-common,
+ xserver-xephyr,
+ xserver-xorg-core,
+ xserver-xorg-dev,
+ xserver-xorg-legacy,
+ xvfb
+Description: Intel Edge graphics display metapackage
+ Installs Intel Edge graphics display components on top of core graphics.
+ This metapackage adds Wayland, compositor, and Xorg server integration for
+ local display use cases.
+
+Package: intel-edge-graphics-sriov
+Architecture: amd64
+Depends:
+ intel-edge-graphics-display,
+# from qemu
+ qemu-block-extra,
+ qemu-block-supplemental,
+ qemu-guest-agent,
+ qemu-system,
+ qemu-system-arm,
+ qemu-system-common,
+ qemu-system-data,
+ qemu-system-gui,
+ qemu-system-mips,
+ qemu-system-misc,
+ qemu-system-modules-opengl,
+ qemu-system-modules-spice,
+ qemu-system-ppc,
+ qemu-system-s390x,
+ qemu-system-sparc,
+ qemu-system-x86,
+ qemu-system-x86-xen,
+ qemu-system-xen,
+ qemu-user,
+ qemu-user-binfmt | qemu-user-static,
+ qemu-utils,
+# from spice
+ libspice-server-dev,
+ libspice-server1,
+# from spice-gtk
+ gir1.2-spiceclientglib-2.0,
+ gir1.2-spiceclientgtk-3.0,
+ libspice-client-glib-2.0-8,
+ libspice-client-glib-2.0-dev,
+ libspice-client-gtk-3.0-5,
+ libspice-client-gtk-3.0-dev,
+ spice-client-glib-usb-acl-helper,
+ spice-client-gtk
+Description: Intel Edge graphics SR-IOV virtualization metapackage
+ Installs Intel Edge graphics SR-IOV dependencies for virtualized deployments.
+ This metapackage includes core, display dependencies, and QEMU
+ components for host and guest virtualization workflows.
+

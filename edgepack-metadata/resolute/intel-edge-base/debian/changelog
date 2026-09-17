@@ -1,0 +1,59 @@
+intel-edge-base (1.0~resolute8) resolute; urgency=medium
+
+  * Renamed dkms meta-packages, removed intel-edge-media-ffmpeg and intel-edge-media-gst.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 06 Aug 2026 15:10:58 +0800
+
+intel-edge-base (1.0~resolute7) resolute; urgency=medium
+
+  * Remove intel-edge-graphics-remote.
+
+ -- Yep Mun Chun <mun.chun.yep@intel.com>  Wed, 05 Aug 2026 21:01:00 +0800
+
+intel-edge-base (1.0~resolute6) resolute; urgency=medium
+
+  * Added dkms related dependencies.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 03 Aug 2026 00:00:00 +0000
+
+intel-edge-base (1.0~resolute5) resolute; urgency=medium
+
+  * Fix issue on updating GRUB when reboot.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 27 Jul 2026 00:00:00 +0000
+
+intel-edge-base (1.0~resolute4) resolute; urgency=medium
+
+  * Update standard and realtime to new media and graphics metapackages.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Fri, 17 Jul 2026 00:00:00 +0000
+
+intel-edge-base (1.0~resolute3) resolute; urgency=medium
+
+  * Removed dependencies version to get always latest version from Intel PPA.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 16 Jul 2026 00:00:00 +0000
+
+intel-edge-base (1.0~resolute2) resolute; urgency=medium
+
+  * Bumped intel-edge-graphics version to resolute2.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Tue, 14 Jul 2026 00:00:00 +0000
+
+intel-edge-base (1.0~resolute1) resolute; urgency=medium
+
+  * Initial release for resolute branch.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Fri, 10 Jul 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble2) noble; urgency=medium
+
+  * Update each metapackage dependency to 1.0~noble2.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 22 May 2026 00:00:00 +0000
+
+intel-edge-platform (1.0~noble1) noble; urgency=medium
+
+  * Initial release.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Sun, 18 May 2026 12:00:00 +0000

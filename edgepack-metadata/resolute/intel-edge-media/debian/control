@@ -1,0 +1,120 @@
+Source: intel-edge-media
+Section: metapackages
+Priority: optional
+Maintainer: Tan Wen Yan <wen.yan.tan@intel.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.4
+Rules-Requires-Root: no
+
+Package: intel-edge-media-core
+Architecture: amd64
+Depends:
+ intel-edge-graphics-core,
+ intel-edge-graphics-display,
+# from gmmlib
+ intel-gmmlib,
+ libigdgmm-dev,
+ libigdgmm12,
+# from libva
+ libva-dev,
+ libva-drm2,
+ libva-glx2,
+ libva-wayland2,
+ libva-x11-2,
+ libva2,
+ va-driver-all,
+# from libva-utils
+ vainfo,
+# from media-driver-non-free
+ intel-media-va-driver-non-free,
+# from onevpl (libvpl)
+ libvpl-dev,
+ libvpl2,
+ onevpl-tools,
+# from onevpl-intel-gpu
+ libmfx-gen-dev,
+ libmfx-gen1.2,
+# from libvpl-tools
+ libvpl-tools
+Description: Intel Edge media core metapackage
+ Installs the Intel Edge media core software stack.
+ This package is a metapackage and contains no payload files.
+
+Package: intel-edge-media-gst
+Architecture: amd64
+Depends:
+ intel-edge-media-core,
+# from gstreamer
+ gir1.2-gstreamer-1.0,
+ gstreamer1.0-tools,
+ libgstreamer1.0-0,
+ libgstreamer1.0-dev,
+# from gst-plugins-base
+ gir1.2-gst-plugins-base-1.0,
+ gstreamer1.0-alsa,
+ gstreamer1.0-gl,
+ gstreamer1.0-plugins-base,
+ gstreamer1.0-plugins-base-apps,
+ gstreamer1.0-x,
+ libgstreamer-gl1.0-0,
+ libgstreamer-plugins-base1.0-0,
+ libgstreamer-plugins-base1.0-dev,
+# from gst-plugins-good
+ gstreamer1.0-gtk3,
+ gstreamer1.0-plugins-good,
+ gstreamer1.0-pulseaudio,
+ gstreamer1.0-qt5,
+ gstreamer1.0-qt6,
+# from gst-plugins-bad
+ gir1.2-gst-plugins-bad-1.0,
+ gstreamer1.0-opencv,
+ gstreamer1.0-plugins-bad,
+ gstreamer1.0-plugins-bad-apps,
+ libgstreamer-opencv1.0-0,
+ libgstreamer-plugins-bad1.0-0,
+ libgstreamer-plugins-bad1.0-dev,
+ gir1.2-gst-plugins-extra-1.0,
+ gstreamer1.0-plugins-extra,
+ libgstreamer-plugins-extra1.0-0,
+ libgstreamer-plugins-extra1.0-dev,
+# from gst-plugins-ugly
+ gstreamer1.0-plugins-ugly,
+# from gst-rtsp-server
+ gir1.2-gst-rtsp-server-1.0,
+ gstreamer1.0-rtsp,
+ libgstrtspserver-1.0-0,
+ libgstrtspserver-1.0-dev
+Description: Intel Edge media GStreamer metapackage
+ Installs the Intel Edge media GStreamer software stack.
+ This package is a metapackage and contains no payload files.
+
+Package: intel-edge-media-ffmpeg
+Architecture: amd64
+Depends:
+ intel-edge-media-core,
+# from ffmpeg
+ ffmpeg,
+ ffmpeg-doc,
+ libavcodec-dev,
+ libavcodec-extra,
+ libavcodec-extra62,
+ libavcodec62,
+ libavdevice-dev,
+ libavdevice62,
+ libavfilter-dev,
+ libavfilter-extra,
+ libavfilter-extra11,
+ libavfilter11,
+ libavformat-dev,
+ libavformat-extra,
+ libavformat-extra62,
+ libavformat62,
+ libavutil-dev,
+ libavutil60,
+ libswresample-dev,
+ libswresample6,
+ libswscale-dev,
+ libswscale9
+Description: Intel Edge media FFmpeg metapackage
+ Installs the Intel Edge media FFmpeg software stack.
+ This package is a metapackage and contains no payload files.

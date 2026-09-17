@@ -1,0 +1,76 @@
+#!/bin/sh
+# postinst script for intel-edge-graphics-core
+#
+# see: dh_installdeb(1)
+
+set -e
+
+GRUB_DEFAULT="/etc/default/grub"
+
+# Kernel boot parameters required for graphics core deployment (xe driver only)
+KERNEL_PARAMS="xe.force_probe=* modprobe.blacklist=i915"
+
+update_grub_cmdline() {
+    [ -f "$GRUB_DEFAULT" ] || return 1
+
+    # Read GRUB_CMDLINE_LINUX value without quotes (separate from LINUX_DEFAULT).
+    current="$(sed -n -E 's/^GRUB_CMDLINE_LINUX="(.*)"/\1/p' "$GRUB_DEFAULT" | head -n1)"
+
+    new="$current"
+    changed=0
+
+    for param in $KERNEL_PARAMS; do
+        key="${param%%=*}"
+
+        # Skip if the exact parameter is already present.
+        case " $new " in
+            *" $param "*)
+                continue
+                ;;
+        esac
+
+        # Replace any existing key=value variant with the desired one.
+        new="$(printf '%s' "$new" | sed -E "s/(^| )${key}(=[^ ]*)?( |\$)/ /g")"
+        new="$(printf '%s' "$new" | sed -E 's/^ +| +$//g; s/  +/ /g')"
+        new="${new:+$new }$param"
+        changed=1
+    done
+
+    [ "$changed" -eq 1 ] || return 1
+
+    # Normalize whitespace and update or append the GRUB variable.
+    new="$(printf '%s' "$new" | sed -E 's/^ +| +$//g; s/  +/ /g')"
+    esc="$(printf '%s' "$new" | sed -e 's/[&|\\]/\\&/g')"
+
+    if grep -Eq '^GRUB_CMDLINE_LINUX=' "$GRUB_DEFAULT"; then
+        sed -i -E "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"${esc}\"|" "$GRUB_DEFAULT"
+    else
+        echo "GRUB_CMDLINE_LINUX=\"${new}\"" >> "$GRUB_DEFAULT"
+    fi
+
+    return 0
+}
+
+case "$1" in
+    configure)
+        if update_grub_cmdline; then
+            if command -v update-grub >/dev/null 2>&1; then
+                update-grub
+            elif command -v grub-mkconfig >/dev/null 2>&1; then
+                grub-mkconfig -o /boot/grub/grub.cfg
+            fi
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

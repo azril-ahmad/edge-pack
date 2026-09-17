@@ -1,0 +1,40 @@
+Source: intel-edge-base
+Section: metapackages
+Priority: optional
+Maintainer: Tan Wen Yan <wen.yan.tan@intel.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.4
+Rules-Requires-Root: no
+
+Package: intel-edge-base-realtime
+Architecture: amd64
+Depends:
+ intel-edge-graphics-core,
+ intel-edge-media-core,
+ intel-edge-tsn,
+ linux-firmware-intel-graphics,
+ linux-firmware-intel-wireless,
+ ubuntu-realtime,
+ edge-edac-dkms,
+ edge-issei-dkms
+Conflicts: intel-edge-base-standard
+Replaces: intel-edge-base-standard
+Description: Intel Edge base profile with desktop realtime(rt) metapackage bundle
+ Installs the Intel Edge base rt metapackage bundle.
+ This package is a metapackage and contains no payload files.
+
+Package: intel-edge-base-standard
+Architecture: amd64
+Depends:
+ intel-edge-graphics-core,
+ intel-edge-graphics-display,
+ intel-edge-media-core,
+ linux-firmware-intel-graphics,
+ linux-firmware-intel-wireless,
+ edge-edac-dkms,
+ edge-issei-dkms
+Conflicts: intel-edge-base-realtime, ubuntu-realtime
+Replaces: intel-edge-base-realtime
+Description: Intel Edge base profile of desktop non-rt metapackage bundle
+ Installs the Intel Edge base non-rt metapackage bundle.
+ This package is a metapackage and contains no payload files.

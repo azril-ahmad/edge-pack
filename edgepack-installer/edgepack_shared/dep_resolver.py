@@ -32,7 +32,7 @@ def _apt_show(pkg):
     # loudly rather than silently resolve to an empty/incomplete package list.
     try:
         r = subprocess.run(
-            ["apt", "show", pkg],
+            ["/usr/bin/apt", "show", pkg],
             capture_output=True, text=True, timeout=30
         )
         return r.stdout

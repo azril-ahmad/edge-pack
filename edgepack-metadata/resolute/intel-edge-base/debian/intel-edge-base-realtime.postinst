@@ -1,0 +1,168 @@
+#!/bin/sh
+# postinst script for intel-edge-base-realtime
+#
+# see: dh_installdeb(1)
+
+set -e
+
+# Kernel boot parameters to ensure are present.
+KERNEL_PARAMS="intel_iommu=on iommu=pt isolcpus=1,2 rcu_nocbs=1,2 rcu_nocb_poll irqaffinity=0 kthread_cpus=0 clocksource=tsc tsc=reliable hpet=disable nosmt numa_balancing=disable nmi_watchdog=0 nowatchdog efi=noruntime console=ttyS0,115200n8"
+
+GRUB_DEFAULT="/etc/default/grub"
+GRUB_CFG="/boot/grub/grub.cfg"
+# Drop-in that pins the top-level GRUB default to the realtime kernel flavour.
+# It sorts after 99-realtime.cfg so it deterministically wins, making the
+# realtime kernel the top-level (index 0) entry regardless of version ordering.
+GRUB_FLAVOUR_DROPIN="/etc/default/grub.d/intel-edge-base-flavour.cfg"
+
+signal_reboot_required() {
+    if ! grep -qx "intel-edge-base-realtime" /run/reboot-required.pkgs 2>/dev/null; then
+        echo "intel-edge-base-realtime" >> /run/reboot-required.pkgs
+    fi
+    touch /run/reboot-required
+}
+
+# Ensure GRUB honours a persistent saved default entry so that the kernel we
+# select below is booted on *every* reboot, not just the first one. Returns 0
+# when the file was modified (so the caller can regenerate grub.cfg).
+ensure_grub_default_saved() {
+    [ -f "$GRUB_DEFAULT" ] || return 1
+
+    if grep -Eq '^[[:space:]]*GRUB_DEFAULT=saved[[:space:]]*$' "$GRUB_DEFAULT"; then
+        return 1
+    fi
+
+    if grep -Eq '^[[:space:]]*GRUB_DEFAULT=' "$GRUB_DEFAULT"; then
+        sed -i -E 's|^[[:space:]]*GRUB_DEFAULT=.*|GRUB_DEFAULT=saved|' "$GRUB_DEFAULT"
+    else
+        echo "GRUB_DEFAULT=saved" >> "$GRUB_DEFAULT"
+    fi
+
+    return 0
+}
+
+# Own a GRUB_FLAVOUR_ORDER drop-in so the given kernel flavour becomes the
+# top-level default menu entry. Returns 0 when the file was created or changed.
+set_grub_flavour_order() {
+    _want="GRUB_FLAVOUR_ORDER=\"$1\""
+    if [ -f "$GRUB_FLAVOUR_DROPIN" ] && [ "$(cat "$GRUB_FLAVOUR_DROPIN")" = "$_want" ]; then
+        return 1
+    fi
+    mkdir -p "$(dirname "$GRUB_FLAVOUR_DROPIN")"
+    printf '%s\n' "$_want" > "$GRUB_FLAVOUR_DROPIN"
+    return 0
+}
+
+update_grub_cmdline() {
+    [ -f "$GRUB_DEFAULT" ] || return 1
+
+    # Read the current value of GRUB_CMDLINE_LINUX (without quotes).
+    current="$(sed -n -E 's/^GRUB_CMDLINE_LINUX="(.*)"/\1/p' "$GRUB_DEFAULT" | head -n1)"
+
+    new="$current"
+    changed=0
+
+    for param in $KERNEL_PARAMS; do
+        key="${param%%=*}"
+
+        # Already present with the exact value? Nothing to do.
+        case " $new " in
+            *" $param "*)
+                continue
+                ;;
+        esac
+
+        # Drop any existing occurrence of the same key (e.g. nmi_watchdog=1),
+        # then append the desired parameter.
+        new="$(printf '%s' "$new" | sed -E "s/(^| )${key}(=[^ ]*)?( |\$)/ /g")"
+        new="$(printf '%s' "$new" | sed -E 's/^ +| +$//g; s/  +/ /g')"
+        new="${new:+$new }$param"
+
+        changed=1
+    done
+
+    [ "$changed" -eq 1 ] || return 1
+
+    # Normalise whitespace.
+    new="$(printf '%s' "$new" | sed -E 's/^ +| +$//g; s/  +/ /g')"
+
+    # Escape characters that are special to sed's replacement string.
+    esc="$(printf '%s' "$new" | sed -e 's/[&|\\]/\\&/g')"
+
+    if grep -Eq '^GRUB_CMDLINE_LINUX=' "$GRUB_DEFAULT"; then
+        sed -i -E "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"${esc}\"|" "$GRUB_DEFAULT"
+    else
+        echo "GRUB_CMDLINE_LINUX=\"${new}\"" >> "$GRUB_DEFAULT"
+    fi
+
+    return 0
+}
+
+case "$1" in
+    configure)
+        grub_needs_regen=0
+
+        # Make the realtime kernel flavour the top-level default entry,
+        # overriding any generic override left by the standard profile.
+        if set_grub_flavour_order realtime; then
+            grub_needs_regen=1
+        fi
+
+        if update_grub_cmdline; then
+            grub_needs_regen=1
+        fi
+
+        # Make GRUB use the saved default entry persistently. Without this, grub
+        # only honours a one-time override (next_entry) and reverts to
+        # GRUB_DEFAULT on the second reboot.
+        if ensure_grub_default_saved; then
+            grub_needs_regen=1
+        fi
+
+        # Regenerate the GRUB configuration so the new parameters / default take
+        # effect on the next boot.
+        if [ "$grub_needs_regen" = 1 ]; then
+            if command -v update-grub >/dev/null 2>&1; then
+                update-grub
+            elif command -v grub-mkconfig >/dev/null 2>&1; then
+                grub-mkconfig -o "$GRUB_CFG"
+            fi
+        fi
+
+        # With GRUB_FLAVOUR_ORDER=realtime the realtime kernel is the top-level
+        # menu entry (index 0). Pin it as the persistent default. A fixed index
+        # is robust: unlike a submenu path (e.g. "1>0"), it does not shift when
+        # the flavour ordering changes the entry positions. Run unconditionally
+        # so a stale saved_entry from a previous ordering is always corrected.
+        if command -v grub-set-default >/dev/null 2>&1; then
+            echo "Setting persistent GRUB default to the realtime kernel (entry 0)."
+            grub-set-default 0
+        else
+            echo "Warning: grub-set-default is missing; cannot pin the realtime kernel!" >&2
+        fi
+
+        # Switching only takes effect after a reboot when we are currently
+        # running a non-realtime kernel.
+        case "$(uname -r)" in
+            *realtime*|*-rt|*-rt[0-9]*)
+                # Already on a realtime kernel; nothing to switch.
+                ;;
+            *)
+                echo "Standard kernel detected; the realtime kernel will boot after reboot."
+                signal_reboot_required
+                ;;
+        esac
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

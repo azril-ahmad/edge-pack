@@ -1,0 +1,53 @@
+intel-edge-graphics (1.0~resolute7) resolute; urgency=medium
+
+  * Renamed graphics-dkms to edge-gfx-dkms.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 06 Aug 2026 10:50:43 +0800
+
+intel-edge-graphics (1.0~resolute6) resolute; urgency=medium
+
+  * Removed intel-edge-graphics-remote and updated dependencies.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Tue, 04 Aug 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~resolute5) resolute; urgency=medium
+
+  * Added dkms related dependency.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Mon, 03 Aug 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~resolute4) resolute; urgency=medium
+
+  * Replace unavailable dependencies with resolute package names.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Fri, 17 Jul 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~resolute3) resolute; urgency=medium
+
+  * Split metapackage into core, display, remote, and sriov.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Fri, 17 Jul 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~resolute2) resolute; urgency=medium
+
+  * Update kernel param for SRIOV and core with postinst and postrm.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Tue, 14 Jul 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~resolute1) resolute; urgency=medium
+
+  * Update from noble branch to resolute branch.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Thu, 2 Jul 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble2) noble; urgency=medium
+
+  * Fix graphics qemu user dependency.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 22 May 2026 00:00:00 +0000
+
+intel-edge-graphics (1.0~noble1) noble; urgency=medium
+
+  * Initial release.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 15 May 2026 13:30:00 +0000

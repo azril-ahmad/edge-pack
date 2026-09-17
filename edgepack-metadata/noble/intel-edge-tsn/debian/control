@@ -1,0 +1,21 @@
+Source: intel-edge-tsn
+Section: metapackages
+Priority: optional
+Maintainer: Tan Wen Yan <wen.yan.tan@intel.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: intel-edge-tsn
+Architecture: amd64
+Depends:
+ iproute2,
+ iproute2-doc,
+ libxdp-dev,
+ libxdp1,
+ linuxptp,
+ xdp-tests,
+ xdp-tools
+Description: Intel Edge TSN metapackage
+ Installs the Intel Edge TSN software stack.
+ This package is a metapackage and contains no payload files.

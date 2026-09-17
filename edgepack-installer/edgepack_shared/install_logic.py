@@ -271,8 +271,12 @@ def _build_install_script(packages, repos, prerequisites=None):
         f"{_prefs_write}"
         f'echo "Running: apt-get update"; '
         f"apt-get update || exit $?; "
+        # Disable glob expansion and split the resolver output on newlines only,
+        # so the unquoted $PKGS below (run as root) cannot glob-expand against /
+        # or word-split on whitespace in a version string (review Issue 1).
+        f"set -f; IFS='\n'; "
         f"PKGS=$(python3 {resolver} {pkg_names}) || exit $?; "
-        f'PKGS_INLINE=$(echo $PKGS | tr "\\n" " "); '
+        f'PKGS_INLINE=$(echo "$PKGS" | tr "\\n" " "); '
         f'echo "Resolved: $PKGS_INLINE"; '
         f'echo "Running: apt-get -o Dpkg::Options::=--force-confnew install --allow-downgrades -y -V $PKGS_INLINE"; '
         f"apt-get -o APT::Status-Fd=1 -o Dpkg::Options::=--force-confnew install --allow-downgrades -y -V $PKGS; "

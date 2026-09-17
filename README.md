@@ -1,5 +1,9 @@
 # Edge Pack
 
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+Edge Pack is currently available as a **Tech Preview**.
+
 Edge Pack is a curated collection of Intel-validated software packages and drivers that unlock specific Intel platform capabilities — such as graphics and media acceleration, the Neural Processing Unit (NPU), platform manageability, and real-time kernel support — on top of stock Ubuntu LTS installations. Rather than hunting down individual drivers, PPAs, and kernel packages and figuring out how they fit together, EdgePack packages them into validated, ready-to-install profiles for supported Intel platforms.
 
 ## What Edge Pack Provides
@@ -62,4 +66,4 @@ For support, submit your bug report and feature request to [Github Issues](https
 
 ## License Information
 
-License information for Edge Pack will be published here.
+Edge Pack is licensed under the [MIT License](LICENSE.txt).

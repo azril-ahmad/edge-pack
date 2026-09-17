@@ -1,0 +1,29 @@
+intel-edge-media (1.0~resolute3) resolute; urgency=medium
+
+  * Add gst-plugins-bad extra split deps.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Wed, 09 Sep 2026 14:19:45 +0800
+
+intel-edge-media (1.0~resolute2) resolute; urgency=medium
+
+  * Split metapackage into media-core, media-gst, and media-ffmpeg.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Fri, 17 Jul 2026 00:00:00 +0000
+
+intel-edge-media (1.0~resolute1) resolute; urgency=medium
+
+  * Initial release for resolute.
+
+ -- Tham Jing Hui <jing.hui.tham@intel.com>  Fri, 10 Jul 2026 00:00:00 +0000
+
+intel-edge-media (1.0~noble2) noble; urgency=medium
+
+  * Fix media VA driver dependency.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 22 May 2026 00:00:00 +0000
+
+intel-edge-media (1.0~noble1) noble; urgency=medium
+
+  * Initial release.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 15 May 2026 12:00:00 +0000

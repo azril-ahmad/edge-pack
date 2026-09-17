@@ -1,0 +1,17 @@
+intel-edge-media (1.0~noble3) noble; urgency=medium
+
+  * Split metapackage into media-core, media-gst, and media-ffmpeg.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 16 Jul 2026 00:00:00 +0000
+
+intel-edge-media (1.0~noble2) noble; urgency=medium
+
+  * Fix media VA driver dependency.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 22 May 2026 00:00:00 +0000
+
+intel-edge-media (1.0~noble1) noble; urgency=medium
+
+  * Initial release.
+
+ -- Tan Wen Yan <wen.yan.tan@intel.com>  Thu, 15 May 2026 12:00:00 +0000
