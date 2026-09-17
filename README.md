@@ -2,9 +2,9 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-Edge Pack is currently available as a **Tech Preview**.
-
 Edge Pack is a curated collection of Intel-validated software packages and drivers that unlock specific Intel platform capabilities — such as graphics and media acceleration, the Neural Processing Unit (NPU), platform manageability, and real-time kernel support — on top of stock Ubuntu LTS installations. Rather than hunting down individual drivers, PPAs, and kernel packages and figuring out how they fit together, EdgePack packages them into validated, ready-to-install profiles for supported Intel platforms.
+
+*<mark>**[!NOTE]**</mark> Edge Pack is currently available as a **Tech Preview**.*
 
 ## What Edge Pack Provides
 
@@ -55,6 +55,9 @@ sha256sum -c edgepack-installer.sha256
 # 2. Run the interactive wizard
 sudo ./edgepack-installer
 ```
+For detailed installation instructions, please refer to the video tutorial below:
+
+https://github.com/user-attachments/assets/ef562165-f427-434d-a472-1244b3e430f6
 
 ## Contribute
 
