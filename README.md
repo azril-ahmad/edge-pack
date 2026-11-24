@@ -12,8 +12,8 @@ Edge Packs are grouped into technical domain areas so you can install the
 capabilities needed for a particular system or workload.
 
 <p align="center">
-	<a href="https://docs.openedgeplatform.intel.com/dev/OEP-articles/edge-pack/index.html">
-		<img src="https://img.shields.io/badge/Launch%20Web%20UI-0068B5?style=for-the-badge&labelColor=0068B5" alt="Launch the Edge Pack Web UI" />
+	<a href="https://docs.openedgeplatform.intel.com/dev/platform-software/edge-pack/index.html">
+		<img src="https://img.shields.io/badge/Seeh%20Documentation%20and%20Deployment%20Selector-0068B5?style=for-the-badge&labelColor=0068B5" alt="Launch the Edge Pack Web UI" />
 	</a>
 </p>
 
