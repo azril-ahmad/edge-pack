@@ -1,6 +1,6 @@
 # tui/screens/step4.py — Step 4: apt installation with live progress and log
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -9,26 +9,36 @@ import itertools
 import logging
 import os
 import shutil
-import stat
-import subprocess  # nosec B404 - reviewed: only used with list-form args (no shell=True), fixed apt/pkexec/xdg-open commands, no untrusted input passed to a shell
+# Reviewed: list-form args only (no shell=True); the `sh -c` scripts are built in install_logic.
+import subprocess  # nosec B404
 import sys
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 
 from .base import BaseWizardScreen, _ButtonNavMixin
 from textual.widgets import Button, Footer, Header, Input, ProgressBar, RichLog, Rule, Static
 
-from ..package_logic import collect_selected_packages, required_prerequisites
-from edgepack_shared.install_logic import run_install
-from edgepack_shared.log import rotate_logs
+from ..package_logic import (
+    collect_selected_packages, required_debconf_selections, required_prerequisites,
+    split_base_and_addons,
+)
+from edgepack_shared.package_status import STATE_CURRENT
+from edgepack_shared.install_logic import run_install, allow_insecure_repos
+from edgepack_shared.log import rotate_logs, open_secure_log as _open_secure_log, LOG_GROUP
+from edgepack_shared.package_report import (
+    apt_cache_policy_origins as _apt_cache_policy_origins,
+    apt_dependency_closure as _apt_dependency_closure,
+    parse_get_line as _parse_get_line,
+    parse_resolved_line as _parse_resolved_line,
+    write_package_summary,
+)
 
 LOG_DIR = "/var/log/edgepack"
 
@@ -44,119 +54,6 @@ def _candidate_log_paths(filename: str) -> list[str]:
     ]
 
 
-def _classify_origin(origin: str | None) -> str:
-    """Classify a repository origin (URL) as Intel, Ubuntu, or Unknown."""
-    if not origin:
-        return "Unknown"
-    origin_lower = origin.lower()
-    if "intel" in origin_lower:
-        return "Intel"
-    host = (urlparse(origin).hostname or "").lower()
-    if host == "ubuntu.com" or host.endswith(".ubuntu.com"):
-        return "Ubuntu"
-    return "Unknown"
-
-
-def _parse_get_line(line: str) -> tuple[str, str, str] | None:
-    """Parse an apt "Get:N <url> <dist/comp> <arch> <pkg> <arch> <version> [<size>]" line.
-
-    Returns (pkg_name, version, url) or None if *line* isn't a package fetch
-    line (apt also prints "Get:" lines for index files during apt-get update, which are not packages).
-
-    Packages already present in apt's local archive cache produce no "Get:"
-    line at all (apt skips the download), so this only ever reports packages
-    actually fetched over the network this run — cached packages are simply
-    not tracked, by design.
-    """
-    if not line.startswith("Get:"):
-        return None
-    tokens = line.split()
-    if len(tokens) < 7:
-        return None
-    url, pkg, version = tokens[1], tokens[4], tokens[6]
-    if pkg.startswith("["):  # index-file fetch line, not a package
-        return None
-    return pkg, version, url
-
-
-def _parse_resolved_line(line: str) -> set[str]:
-    """Parse "Resolved: name[=version] ..." into a set of bare package names."""
-    payload = line[len("Resolved:"):].strip()
-    return {entry.partition("=")[0] for entry in payload.split() if entry}
-
-
-def _apt_cache_policy_origins(pkg_names: set[str]) -> dict[str, tuple[str, str]]:
-    """Batched, unprivileged "apt-cache policy" lookup for cached packages that had no "Get:" line.
-
-    Returns {name: (candidate_version, origin_url)}. One subprocess call for
-    all names (apt-cache re-parses the whole index per invocation, so
-    batching keeps this cheap regardless of how many are cached). Reads
-    apt's local index/dpkg status only — no network, no root required.
-    """
-    if not pkg_names:
-        return {}
-    try:
-        result = subprocess.run(
-            ["apt-cache", "policy", *sorted(pkg_names)],
-            capture_output=True, text=True, timeout=30,
-        )
-    except Exception:
-        return {}
-
-    origins: dict[str, tuple[str, str]] = {}
-    name: str | None = None
-    version = "unknown"
-    origin = "unknown"
-    lines = result.stdout.splitlines()
-    for i, raw in enumerate(lines):
-        if raw and not raw[0].isspace() and raw.endswith(":"):
-            if name:
-                origins[name] = (version, origin)
-            name, version, origin = raw[:-1], "unknown", "unknown"
-        elif raw.strip().startswith("Candidate:"):
-            version = raw.split(":", 1)[1].strip()
-        elif raw.strip().startswith("***") and i + 1 < len(lines):
-            parts = lines[i + 1].split()
-            if len(parts) >= 2:
-                origin = parts[1]
-    if name:
-        origins[name] = (version, origin)
-    return origins
-
-
-def _apt_dependency_closure(pkg_names: set[str]) -> set[str]:
-    """Recursive hard-dependency closure of *pkg_names*, restricted to already-installed packages.
-
-    Top-level packages only cover what THIS run explicitly requested/pinned
-    (edgepack_shared.dep_resolver leaves unconstrained deps for apt to
-    resolve on its own). Those auto-pulled deps get a "Get:" line on a fresh
-    install, but produce no signal at all on a reinstall where they're
-    already satisfied — this closure lets the leftover lookup find them too.
-    Best-effort: recursing through shared base-OS libraries means this can
-    over-approximate vs. the real install transaction, but a one-level-only
-    lookup under-approximates real multi-hop edge/media dependency chains,
-    so recursion is the accepted tradeoff. "--installed" limits the result
-    to packages actually on the system.
-    """
-    if not pkg_names:
-        return set()
-    try:
-        result = subprocess.run(
-            ["apt-cache", "depends", "--recurse", "--no-recommends", "--no-suggests",
-             "--no-conflicts", "--no-breaks", "--no-replaces", "--no-enhances",
-             "--installed", *sorted(pkg_names)],
-            capture_output=True, text=True, timeout=30,
-        )
-    except Exception:
-        return set()
-
-    closure: set[str] = set()
-    for raw in result.stdout.splitlines():
-        if raw and not raw[0].isspace():
-            closure.add(raw.strip())
-    return closure
-
-
 def _ensure_log_dir(sudo_password: str | None) -> bool:
     """Create /var/log/edgepack/ with elevated privileges if it does not exist yet.
 
@@ -170,32 +67,29 @@ def _ensure_log_dir(sudo_password: str | None) -> bool:
     if Path(log_dir).is_dir() and os.access(log_dir, os.W_OK):
         return True
     try:
-        # Create the directory owned by the invoking user so the TUI process
-        # (which runs unprivileged) can write the log file into it.
-        # $SUDO_USER is set by sudo; pkexec sets $PKEXEC_UID instead (no
-        # world-writable fallback needed for either elevation path).
+        # root:adm 0750 (see edgepack_shared.log.secure_log_path) so every
+        # administrator can read the logs, falling back to root-only where
+        # there is no 'adm' group.
         script = (
-            f"mkdir -p {log_dir} && "
-            f"owner=\"${{SUDO_USER:-${{PKEXEC_UID:-}}}}\" && "
-            f"{{ [ -n \"$owner\" ] && chown \"$owner\": {log_dir}; }}; "
-            # Restrict directory permissions to owner-only (700). Log files may
-            # contain sensitive system inventory data. Do not rely on default umask.
-            f"chmod 700 {log_dir}"
+            f"mkdir -p {log_dir} || exit 1; "
+            f"if chgrp {LOG_GROUP} {log_dir} 2>/dev/null; then "
+            f"chmod 0750 {log_dir}; else chmod 0700 {log_dir}; fi"
         )
         if shutil.which("flatpak-spawn") or os.path.exists("/usr/bin/flatpak-spawn"):
-            result = subprocess.run(
+            # flatpak-spawn is resolved via PATH on purpose: its location is set by the sandbox.
+            result = subprocess.run(  # nosec B603 B607
                 ["flatpak-spawn", "--host", "pkexec", "sh", "-c", script],
                 capture_output=True, timeout=10,
             )
         elif sudo_password is not None:
-            result = subprocess.run(
-                ["sudo", "-S", "-p", "", "sh", "-c", script],
+            result = subprocess.run(  # nosec B603
+                ["/usr/bin/sudo", "-S", "-p", "", "/bin/sh", "-c", script],
                 input=sudo_password + "\n",
                 capture_output=True, text=True, timeout=10,
             )
         else:
-            result = subprocess.run(
-                ["sudo", "-n", "sh", "-c", script],
+            result = subprocess.run(  # nosec B603
+                ["/usr/bin/sudo", "-n", "/bin/sh", "-c", script],
                 capture_output=True, timeout=10,
             )
         if result.returncode != 0:
@@ -275,8 +169,8 @@ class SudoAuthScreen(_ButtonNavMixin, ModalScreen):
 
         def _validate() -> None:
             try:
-                result = subprocess.run(
-                    ["sudo", "-S", "-p", "", "true"],
+                result = subprocess.run(  # nosec B603
+                    ["/usr/bin/sudo", "-S", "-p", "", "true"],
                     input=password + "\n",
                     capture_output=True,
                     text=True,
@@ -320,6 +214,53 @@ class SudoAuthScreen(_ButtonNavMixin, ModalScreen):
     @on(Button.Pressed, "#btn-auth-cancel")
     def on_cancel_btn(self) -> None:
         self.dismiss(None)
+
+
+# ---------------------------------------------------------------------------
+# Cancel-installation confirmation modal
+# ---------------------------------------------------------------------------
+
+class CancelInstallScreen(_ButtonNavMixin, ModalScreen):
+    """Confirmation modal for aborting an install that is still downloading.
+
+    Only ever reachable before dpkg starts, so the wording can promise that
+    the system is untouched. Dismissed with True to abort, False to continue.
+    """
+
+    BINDINGS = [
+        Binding("escape", "keep_installing",   "Keep Installing", show=False),
+        Binding("space",  "press_focused",     "",                show=False),
+        Binding("left",   "focus_prev_button", "",                show=False),
+        Binding("right",  "focus_next_button", "",                show=False),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cancel-dialog"):
+            yield Static("⚠  Cancel Installation?", id="cancel-title", markup=False)
+            yield Rule()
+            yield Static(
+                "apt is still downloading packages — nothing has been\n"
+                "installed yet, so stopping now is safe.\n\n"
+                "You can start the installation again afterwards.",
+                id="cancel-msg",
+            )
+            with Horizontal(id="cancel-actions"):
+                yield Button("← Keep Installing", id="btn-keep-installing")
+                yield Button("✕  Stop Installation", variant="error", id="btn-confirm-cancel")
+
+    def on_mount(self) -> None:
+        self.set_timer(0.05, lambda: self.query_one("#btn-keep-installing", Button).focus())
+
+    def action_keep_installing(self) -> None:
+        self.dismiss(False)
+
+    @on(Button.Pressed, "#btn-keep-installing")
+    def on_keep(self) -> None:
+        self.dismiss(False)
+
+    @on(Button.Pressed, "#btn-confirm-cancel")
+    def on_confirm(self) -> None:
+        self.dismiss(True)
 
 
 # ---------------------------------------------------------------------------
@@ -406,9 +347,10 @@ class RestartPromptScreen(_ButtonNavMixin, ModalScreen):
         # If the sudo cache from the install is still valid we can reboot
         # immediately without asking for a password again.
         try:
-            cache_valid = subprocess.run(
-                ["sudo", "-n", "true"],
+            cache_valid = subprocess.run(  # nosec B603
+                ["/usr/bin/sudo", "-n", "true"],
                 capture_output=True,
+                timeout=10,
             ).returncode == 0
         except Exception as e:
             logging.getLogger("tui_log").warning("sudo cache check failed to run: %s", e)
@@ -439,15 +381,15 @@ class RestartPromptScreen(_ButtonNavMixin, ModalScreen):
             sys.stdout.write("\rRebooting now...                \n")
             sys.stdout.flush()
 
-            for base_cmd in (["sudo", "systemctl", "reboot", "-i"], ["sudo", "reboot"]):
+            for base_cmd in (["/usr/bin/sudo", "systemctl", "reboot", "-i"], ["/usr/bin/sudo", "reboot"]):
                 try:
                     if use_cache:
                         cmd = base_cmd
                         inp = None
                     else:
-                        cmd = ["sudo", "-S", "-p", ""] + base_cmd[1:]
+                        cmd = ["/usr/bin/sudo", "-S", "-p", ""] + base_cmd[1:]
                         inp = password + "\n"
-                    result = subprocess.run(
+                    result = subprocess.run(  # nosec B603
                         cmd,
                         input=inp,
                         capture_output=True,
@@ -456,7 +398,8 @@ class RestartPromptScreen(_ButtonNavMixin, ModalScreen):
                     )
                     if result.returncode == 0:
                         return
-                except Exception:
+                except (OSError, subprocess.SubprocessError) as exc:
+                    logging.getLogger("tui_log").warning("Reboot attempt failed: %s", exc)
                     continue
             sys.stdout.write("Reboot failed. Please restart your system manually.\n")
             sys.stdout.flush()
@@ -491,13 +434,20 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
         self._install_running = False
         self._install_complete = False
         self._install_failed_code: int | None = None
+        self._install_handle = None   # InstallHandle for the running install
+        self._cancel_requested = False
+        # Latched once dpkg starts writing to the system; from that point on
+        # cancelling could corrupt the package database, so it is disallowed.
+        self._point_of_no_return = False
         self._spinner = itertools.cycle(_SPINNER)
         self._active_pkg: str | None = None
         self._pkg_names: list[str] = []
         self._log_file = None         # opened when install starts
         self._actual_log_path: str | None = None
+        self._log_failure_reported = False
         self._install_ts: str | None = None
         self._pkg_get_origins: dict[str, tuple[str, str]] = {}
+        self._dl_count = 0             # "Get:" lines seen in the current download phase
         self._in_install_phase = False
         # Full expected package roster (prereq names known upfront + main
         # names learned from the "Resolved:" line) — diffed against
@@ -521,13 +471,13 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
     def compose(self) -> ComposeResult:
         yield Header()
 
-        with Vertical(id="step4-outer"):
+        with ScrollableContainer(id="step4-outer"):
             yield Static("Step 4 of 4 — Installing", id="step4-title")
             yield Rule()
 
             # Package status list — populated in on_mount
             yield Static("Packages to be installed:", id="pkg-list-heading")
-            yield Vertical(id="pkg-status-list")
+            yield ScrollableContainer(id="pkg-status-list")
 
             # Progress bar + status label (hidden until install starts)
             yield ProgressBar(total=100, id="install-progress", show_eta=False)
@@ -538,11 +488,12 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             # Live apt output
             yield RichLog(id="install-log", highlight=True, markup=True, wrap=True)
 
-            yield Rule()
+        yield Rule()
 
-            with Horizontal(id="step4-actions"):
-                yield Button("← Back", id="btn-back")
-                yield Button("▶ Install Now", variant="success", id="btn-install")
+        with Horizontal(id="step4-actions"):
+            yield Button("← Back", id="btn-back")
+            yield Button("✕ Cancel", variant="error", id="btn-cancel-install")
+            yield Button("▶ Install Now", variant="success", id="btn-install")
 
         yield Footer()
 
@@ -551,26 +502,62 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
     # ------------------------------------------------------------------
 
     def on_mount(self) -> None:
-        packages = collect_selected_packages(self.app.pkg_entries)  # type: ignore[attr-defined]
-        self._pkg_names = sorted(packages.keys())
+        app = self.app  # type: ignore[attr-defined]
+        base_pkgs, addon_pkgs = split_base_and_addons(app.pkg_entries)
+        status = getattr(app, "package_status", {}) or {}
+        # A dependency the user also picked as an add-on is listed under add-ons,
+        # matching Step 3; mounting it twice would also collide on the row ID.
+        selected = set(base_pkgs) | set(addon_pkgs)
+        deps = [n for n in (getattr(app, "base_dependencies", None) or []) if n not in selected]
 
-        pkg_list = self.query_one("#pkg-status-list", Vertical)
-        for name in self._pkg_names:
-            pkg_list.mount(Static(
-                f"  ○  {name}",
-                id=_pkg_id(name),
-                classes="pkg-status-row",
-            ))
+        pkg_list = self.query_one("#pkg-status-list", ScrollableContainer)
+        self._size_package_list()
+        groups: list[tuple[str, list[str]]] = [("Base profile", base_pkgs)]
+        if deps:
+            groups.append((f"Included with this profile ({len(deps)})", deps))
+        if addon_pkgs:
+            groups.append(("Optional add-ons", addon_pkgs))
+
+        # Mirrors Step 3's grouping so the same packages appear on both screens.
+        self._pkg_names = []
+        seen_ids: set[str] = set()
+        for title, names in groups:
+            names = [n for n in names if _pkg_id(n) not in seen_ids]
+            if not names:
+                continue
+            pkg_list.mount(Static(f"[dim]{title}[/dim]", markup=True, classes="pkg-group-header"))
+            for name in names:
+                seen_ids.add(_pkg_id(name))
+                self._pkg_names.append(name)
+                # Packages already at the candidate version never emit a dpkg
+                # pmstatus line, so mark them now instead of leaving them pending.
+                if (status.get(name) or {}).get("state") == STATE_CURRENT:
+                    label = f"  [green]✓[/green]  {name}  [dim](already up to date)[/dim]"
+                else:
+                    label = f"  ○  {name}"
+                pkg_list.mount(Static(
+                    label, markup=True, id=_pkg_id(name), classes="pkg-status-row",
+                ))
 
         # Hide progress widgets until install starts
         self.query_one("#install-progress").display = False
         self.query_one("#install-status-label").display = False
+
+        self._set_cancel_visible(False)
 
         # Spinner timer — updates the active package icon at 10 fps
         self.set_interval(0.1, self._tick_spinner)
 
         # Default focus: Install Now button
         self.set_timer(0.05, lambda: self.query_one("#btn-install", Button).focus())
+
+    def on_resize(self, event) -> None:
+        self._size_package_list()
+
+    def _size_package_list(self) -> None:
+        self.query_one("#pkg-status-list", ScrollableContainer).styles.max_height = max(
+            6, self.app.size.height - 30
+        )
 
     # ------------------------------------------------------------------
     # Actions
@@ -585,6 +572,27 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             and self.focused.id == "btn-back"
         ):
             self.app.action_focus_next()
+
+    def action_navigate_up(self) -> None:
+        if not self._scroll_focused_panel(-1):
+            super().action_navigate_up()
+
+    def action_navigate_down(self) -> None:
+        if not self._scroll_focused_panel(1):
+            super().action_navigate_down()
+
+    def _scroll_focused_panel(self, delta: int) -> bool:
+        focused = self.focused
+        if focused not in (
+            self.query_one("#pkg-status-list", ScrollableContainer),
+            self.query_one("#step4-outer", ScrollableContainer),
+        ):
+            return False
+        offset = focused.scroll_offset.y
+        if (delta > 0 and offset >= focused.max_scroll_y) or (delta < 0 and offset <= 0):
+            return False
+        focused.scroll_relative(y=delta, animate=False)
+        return True
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -628,36 +636,134 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             return  # user cancelled — do nothing
         self._start_install(sudo_password=password)
 
+    @on(Button.Pressed, "#btn-cancel-install")
+    def on_cancel_install(self) -> None:
+        if self._cancellable:
+            self.app.push_screen(CancelInstallScreen(), self._on_cancel_confirmed)
+
+    def _on_cancel_confirmed(self, confirmed: bool | None) -> None:
+        """Abort the install, unless dpkg started while the dialog was open."""
+        if not confirmed:
+            return
+        if not self._cancellable:
+            self._append_log(
+                "[yellow]Too late to cancel — packages are already being "
+                "written to the system.[/yellow]"
+            )
+            return
+        # cancel() also returns False when dpkg started between this screen's
+        # last update and now — the handle's flag is the authoritative one.
+        handle = self._install_handle
+        if handle is None:
+            return
+        if not handle.cancel():
+            if handle.dpkg_started:
+                self._enter_point_of_no_return()
+                self._append_log(
+                    "[yellow]Too late to cancel — packages are already being "
+                    "written to the system.[/yellow]"
+                )
+            return
+
+        self._cancel_requested = True
+        self._set_cancel_visible(False)
+        try:
+            self.query_one("#install-status-label", Static).update(
+                "[yellow]Cancelling installation…[/yellow]"
+            )
+        except Exception:
+            # UI/widget may be gone after install completes — silently ignore
+            pass  # nosec B110
+        self._append_log("\n[yellow]Cancelling installation at user request…[/yellow]")
+
+    @property
+    def _cancellable(self) -> bool:
+        """True while apt is running but has not yet handed over to dpkg."""
+        return (
+            self._install_running
+            and not self._point_of_no_return
+            and not self._cancel_requested
+        )
+
+    def _set_cancel_visible(self, visible: bool) -> None:
+        """Show or hide the Cancel button, moving focus off it when it disappears."""
+        try:
+            btn = self.query_one("#btn-cancel-install", Button)
+        except Exception:
+            # UI/widget may be gone after install completes — silently ignore
+            return
+        if not visible and btn.has_focus:
+            self.set_focus(None)
+        # Disabled as well as hidden so arrow-key button navigation skips it.
+        btn.disabled = not visible
+        btn.display = visible
+
+    def _enter_point_of_no_return(self) -> None:
+        """Latch the non-cancellable phase once dpkg starts unpacking/configuring."""
+        if self._point_of_no_return:
+            return
+        self._point_of_no_return = True
+        self._set_cancel_visible(False)
+        self._append_log(
+            "[dim]Applying packages — cancelling is no longer possible.[/dim]"
+        )
+
+    def _focus_cancel_button(self) -> None:
+        """Deferred focus target; the install may already have ended by now."""
+        try:
+            self.query_one("#btn-cancel-install", Button).focus()
+        except Exception:
+            # UI/widget may be gone after install completes — silently ignore
+            pass  # nosec B110
+
     def _start_install(self, sudo_password: str | None) -> None:
         """Lock the UI and launch the background install thread."""
         app = self.app  # type: ignore[attr-defined]
         packages = collect_selected_packages(app.pkg_entries)
 
         self._install_running = True
+        self._cancel_requested = False
+        self._point_of_no_return = False
+        self._install_failed_code = None
         self.query_one("#btn-install", Button).disabled = True
         self.query_one("#btn-back", Button).disabled = True
+        self._set_cancel_visible(True)
+        # Disabling Install/Back leaves focus stranded on a disabled widget.
+        self.set_timer(0.05, self._focus_cancel_button)
 
-        # Show progress widgets
-        self.query_one("#install-progress").display = True
+        # Show progress widgets — indeterminate (no % is meaningful) until
+        # dpkg starts and _on_progress switches it to a determinate bar.
+        self._dl_count = 0
+        bar = self.query_one("#install-progress", ProgressBar)
+        bar.display = True
+        bar.update(total=None)
         self.query_one("#install-status-label").display = True
-        self.query_one("#install-status-label", Static).update("Starting installation…")
+        self.query_one("#install-status-label", Static).update("Resolving and downloading packages…")
 
         self.query_one("#install-log", RichLog).clear()
         self._append_log("Starting installation…\n")
 
         repos = list((app.detected_os_entry or {}).get("repositories", {}).values())
+        selected_profiles = [app.selected_profile, *app.selected_addon_profiles]
         prerequisites = required_prerequisites(
             app.processor,
-            [app.selected_profile, *app.selected_addon_profiles],
+            selected_profiles,
             app.detected_os_key,
         )
+        debconf_selections = required_debconf_selections(app.processor, selected_profiles)
+        hidden_packages: list[str] = []
+        for _key in selected_profiles:
+            if _key:
+                hidden_packages.extend(
+                    app.processor.hidden_os_packages(_key, app.detected_platform_key, app.detected_os_key)
+                )
 
         # Ensure /var/log/edgepack/ is writable (requires root on first run).
         _log_dir_ok = _ensure_log_dir(sudo_password)
         if not _log_dir_ok:
             self._append_log(
                 "[yellow]Warning: could not create persistent log directory; "
-                "installation will proceed but logs will not be retained.[/yellow]"
+                "trying the fallback log directory.[/yellow]"
             )
         # Clean up stale log files before creating new ones.
         rotate_logs(LOG_DIR, max_age_days=30, max_count=10)
@@ -669,21 +775,21 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
         self._in_install_phase = False
         self._prereq_pkg_names = {p.split("=")[0] for p in (prerequisites.get("packages") or [])}
         self._resolved_pkg_names = set()
+        self._log_failure_reported = False
+        self._log_file = None
+        self._actual_log_path = None
         _log_filename = f"edgepack-installer-{_ts}.log"
         for _candidate in _candidate_log_paths(_log_filename):
             try:
                 Path(_candidate).parent.mkdir(parents=True, exist_ok=True)
-                self._log_file = open(_candidate, "w", encoding="utf-8", buffering=1)
-                # Restrict log file permissions to owner-only (0o600). Log files may
-                # contain sensitive system inventory data; do not rely on umask.
-                os.chmod(_candidate, stat.S_IRUSR | stat.S_IWUSR)
-                self._actual_log_path = _candidate
-                break
-            except Exception:
+                log_file = _open_secure_log(_candidate, buffering=1)
+            except OSError:
                 continue
+            self._log_file = log_file
+            self._actual_log_path = _candidate
+            break
         else:
-            self._log_file = None
-            self._actual_log_path = None
+            self._report_log_failure("Could not create a secure installation log")
 
         if self._log_file:
             try:
@@ -691,11 +797,19 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
                     f"EdgePack Installer log\n"
                     f"Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                     f"Packages: {', '.join(self._pkg_names)}\n"
-                    f"{'=' * 60}\n"
+                    + "".join(
+                        f"Preseed: {pkg} {question} {qtype} {value}\n"
+                        for pkg, question, qtype, value in debconf_selections
+                    )
+                    + (
+                        "WARNING: repository https enforcement disabled "
+                        "(--allow-insecure-repos)\n"
+                        if allow_insecure_repos() else ""
+                    )
+                    + f"{'=' * 60}\n"
                 )
-            except Exception:
-                # UI/widget may be gone after install completes — silently ignore
-                pass
+            except OSError as exc:
+                self._disable_log(exc)
 
         kwargs = dict(
             output_callback=self._on_output,
@@ -703,8 +817,27 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             finished_callback=self._on_finished,
             schedule=app.call_from_thread,
         )
-        run_install(sorted(packages.items()), repos, sudo_password=sudo_password,
-                    prerequisites=prerequisites, **kwargs)
+        self._install_handle = run_install(
+            sorted(packages.items()), repos, sudo_password=sudo_password,
+            prerequisites=prerequisites, force_packages=hidden_packages,
+            debconf_selections=debconf_selections, **kwargs
+        )
+
+    def _report_log_failure(self, error: object, kind: str = "installation log") -> None:
+        if not self._log_failure_reported:
+            self._log_failure_reported = True
+            logging.getLogger("tui_log").warning("%s unavailable: %s", kind, error)
+            self._append_log(f"[yellow]Warning: {kind} unavailable; output will not be saved.[/yellow]")
+
+    def _disable_log(self, error: OSError) -> None:
+        log_file, self._log_file = self._log_file, None
+        if log_file:
+            try:
+                log_file.close()
+            except OSError:
+                # The original failure is reported below; a close error adds nothing.
+                pass
+        self._report_log_failure(error)
 
     # ------------------------------------------------------------------
     # Install callbacks  (invoked on Textual thread via call_from_thread)
@@ -718,9 +851,8 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
         if self._log_file:
             try:
                 self._log_file.write(line if line.endswith("\n") else line + "\n")
-            except Exception:
-                # UI/widget may be gone after install completes — silently ignore
-                pass
+            except OSError as exc:
+                self._disable_log(exc)
         # "Running: apt-get update" — echoed once before every apt-get update
         # call (prerequisite stage and main stage). Turns OFF Get:-line
         # tracking so index-file fetches (Packages/Translation-en/etc, which
@@ -737,8 +869,24 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             if parsed:
                 pkg, version, url = parsed
                 self._pkg_get_origins[pkg] = (version, url)
+                self._dl_count += 1
+                # Buffered "Get:" lines keep arriving during the cancel grace
+                # window; they must not overwrite the cancelling notice.
+                if not self._point_of_no_return and not self._cancel_requested:
+                    try:
+                        self.query_one("#install-status-label", Static).update(
+                            f"Downloading packages… ({self._dl_count} fetched)"
+                        )
+                    except Exception:
+                        # UI/widget may be gone after install completes — silently ignore
+                        pass  # nosec B110
         if stripped.startswith("Resolved:"):
             self._resolved_pkg_names |= _parse_resolved_line(stripped)
+        # The reader thread latches this before scheduling us, so by now it
+        # already reflects any dpkg activity in this very line.
+        handle = self._install_handle
+        if not self._point_of_no_return and handle is not None and handle.dpkg_started:
+            self._enter_point_of_no_return()
         # "Setting up pkg (version) ..." — treat as active package
         if stripped.startswith("Setting up "):
             pkg = stripped[len("Setting up "):].split()[0].split(":")[0]
@@ -746,13 +894,23 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
 
     def _on_progress(self, percent: float, pkg: str, msg: str) -> None:
         """Handle a pmstatus progress update from APT::Status-Fd."""
+        # pmstatus lines are only emitted once apt hands the transaction to
+        # dpkg (dlstatus covers the download phase and is discarded upstream).
+        was_downloading = not self._point_of_no_return
+        self._enter_point_of_no_return()
         pkg = pkg.split(":")[0]  # strip :amd64 architecture suffix
         try:
-            self.query_one("#install-progress", ProgressBar).update(progress=percent)
+            bar = self.query_one("#install-progress", ProgressBar)
+            if was_downloading:
+                # First pmstatus line: leave the indeterminate download phase
+                # and switch to a real, determinate dpkg-driven percentage.
+                bar.update(total=100, progress=percent)
+            else:
+                bar.update(progress=percent)
             self.query_one("#install-status-label", Static).update(msg)
         except Exception:
             # UI/widget may be gone after install completes — silently ignore
-            pass
+            pass  # nosec B110
         if percent >= 99.9:
             self._mark_done(pkg)
         else:
@@ -763,22 +921,30 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
         self._install_running = False
         self._install_complete = True
         self._active_pkg = None
+        self._install_handle = None
+        self._set_cancel_visible(False)
 
         # Close log file
         if self._log_file:
+            log_file, self._log_file = self._log_file, None
             try:
-                self._log_file.write(
+                log_file.write(
                     f"{'=' * 60}\n"
-                    f"Finished: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
+                    + ("Cancelled by user.\n" if self._cancel_requested else "")
+                    + f"Finished: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
                     f"(exit code: {exit_code})\n"
                 )
-                self._log_file.close()
-            except Exception:
-                # UI/widget may be gone after install completes — silently ignore
-                pass
-            self._log_file = None
+            except OSError as exc:
+                self._report_log_failure(exc)
+            finally:
+                try:
+                    log_file.close()
+                except OSError as exc:
+                    self._report_log_failure(exc)
 
-        if exit_code != 0:
+        if self._cancel_requested:
+            self._finish_cancelled_ui()
+        elif exit_code != 0:
             # Mark the active/in-progress package as failed; leave others as-is
             for name in self._pkg_names:
                 try:
@@ -789,15 +955,15 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
                         widget.update(f"  [red]\u2717[/red]  {name}")
                 except Exception:
                     # UI/widget may be gone after install completes — silently ignore
-                    pass
+                    pass  # nosec B110
             try:
-                self.query_one("#install-progress", ProgressBar).update(progress=0)
+                self.query_one("#install-progress", ProgressBar).update(total=100, progress=0)
                 self.query_one("#install-status-label", Static).update(
                     "[bold red]Installation failed[/bold red]"
                 )
             except Exception:
                 # UI/widget may be gone after install completes — silently ignore
-                pass
+                pass  # nosec B110
             self._append_log(f"\n[bold red]Installation failed (exit code: {exit_code}).[/bold red]")
             self._install_failed_code = exit_code
             try:
@@ -808,18 +974,18 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
                 self.set_timer(0.1, lambda: btn.focus())
             except Exception:
                 # UI/widget may be gone after install completes — silently ignore
-                pass
+                pass  # nosec B110
         else:
             for name in self._pkg_names:
                 self._mark_done(name)
             try:
-                self.query_one("#install-progress", ProgressBar).update(progress=100)
+                self.query_one("#install-progress", ProgressBar).update(total=100, progress=100)
                 self.query_one("#install-status-label", Static).update(
                     "[bold green]Checking installed packages\u2026[/bold green]"
                 )
             except Exception:
                 # UI/widget may be gone after install completes — silently ignore
-                pass
+                pass  # nosec B110
             self._append_log("\n[bold green]Installation complete.[/bold green]")
             if self._actual_log_path:
                 self._append_log(f"[dim]Full installation log saved to: {self._actual_log_path}[/dim]")
@@ -851,37 +1017,48 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
         policy" lookup since they never produce a "Get:" line. No-op if
         nothing was found either way (e.g. mock installs).
         """
-        all_origins = {**(cached_origins or {}), **self._pkg_get_origins}
-        if not all_origins:
-            return
-
-        buckets: dict[str, list[str]] = {"Intel": [], "Ubuntu": [], "Unknown": []}
-        for name in sorted(all_origins):
-            version, origin = all_origins[name]
-            category = _classify_origin(origin)
-            tag = "" if name in self._pkg_get_origins else "  [cached]"
-            buckets[category].append(f"  - {name} {version}  ({origin}){tag}")
-
         _filename = f"edgepack-packages-{self._install_ts or 'unknown'}.log"
-        for _candidate in _candidate_log_paths(_filename):
+        try:
+            path = write_package_summary(
+                _candidate_log_paths(_filename), self._pkg_get_origins, cached_origins,
+            )
+        except OSError:
+            self._report_log_failure("Could not save the Software BOM", kind="Software BOM")
+            return
+        if path:
+            self._append_log(f"[dim]Full Software BOM saved to: {path}[/dim]")
+
+    def _finish_cancelled_ui(self) -> None:
+        """Reset the screen to its pre-install state so the user can retry."""
+        self._install_complete = False
+        self._install_failed_code = None
+        for name in self._pkg_names:
             try:
-                Path(_candidate).parent.mkdir(parents=True, exist_ok=True)
-                with open(_candidate, "w", encoding="utf-8") as f:
-                    f.write(
-                        "EdgePack Software BOM\n"
-                        f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                        f"{'=' * 60}\n\n"
-                    )
-                    for category in ("Intel", "Ubuntu", "Unknown"):
-                        entries = buckets[category]
-                        f.write(f"{category} Packages ({len(entries)}):\n")
-                        f.write(("\n".join(entries) if entries else "  (none)") + "\n\n")
-                # Restrict log file permissions to owner-only (0o600). Do not rely on umask.
-                os.chmod(_candidate, stat.S_IRUSR | stat.S_IWUSR)
-                self._append_log(f"[dim]Full Software BOM saved to: {_candidate}[/dim]")
-                return
+                self.query_one(f"#{_pkg_id(name)}", Static).update(f"  ○  {name}")
             except Exception:
-                continue
+                # UI/widget may be gone after install completes — silently ignore
+                pass  # nosec B110
+        try:
+            self.query_one("#install-progress", ProgressBar).update(total=100, progress=0)
+            self.query_one("#install-status-label", Static).update(
+                "[bold yellow]Installation cancelled[/bold yellow]"
+            )
+        except Exception:
+            # UI/widget may be gone after install completes — silently ignore
+            pass  # nosec B110
+        self._append_log(
+            "\n[bold yellow]Installation cancelled. No packages were installed.[/bold yellow]"
+        )
+        try:
+            self.query_one("#btn-back", Button).disabled = False
+            btn = self.query_one("#btn-install", Button)
+            btn.label = "▶ Install Now"
+            btn.variant = "success"
+            btn.disabled = False
+            self.set_timer(0.1, lambda: btn.focus())
+        except Exception:
+            # UI/widget may be gone after install completes — silently ignore
+            pass  # nosec B110
 
     def _finish_success_ui(self) -> None:
         """Complete the success UI transition once the package summary log is done."""
@@ -891,7 +1068,7 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             )
         except Exception:
             # UI/widget may be gone after install completes — silently ignore
-            pass
+            pass  # nosec B110
         try:
             btn = self.query_one("#btn-install", Button)
             btn.label = "Next \u2192"
@@ -900,7 +1077,7 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             self.set_timer(0.1, lambda: btn.focus())
         except Exception:
             # UI/widget may be gone after install completes — silently ignore
-            pass
+            pass  # nosec B110
 
     # ------------------------------------------------------------------
     # Helpers
@@ -917,7 +1094,7 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             )
         except Exception:
             # UI/widget may be gone after install completes — silently ignore
-            pass
+            pass  # nosec B110
 
     def _mark_active(self, pkg_name: str) -> None:
         """Mark a package as currently being installed (spinner)."""
@@ -939,12 +1116,12 @@ class Step4Screen(_ButtonNavMixin, BaseWizardScreen):
             )
         except Exception:
             # UI/widget may be gone after install completes — silently ignore
-            pass
+            pass  # nosec B110
 
     def _append_log(self, text: str) -> None:
         try:
             self.query_one("#install-log", RichLog).write(text)
         except Exception:
             # UI/widget may be gone after install completes — silently ignore
-            pass
+            pass  # nosec B110
 

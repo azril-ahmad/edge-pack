@@ -4,7 +4,7 @@
 # These are extracted from the GUI's step2/step3/step4 mixin methods so that
 # both the GUI and TUI can share the same business logic.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -103,6 +103,7 @@ def build_pkg_entries(
     profile_key: str,
     addon_profile_keys: list[str] | None = None,
     platform_key: str | None = None,
+    os_key: str | None = None,
 ) -> list[dict]:
     """Build the flat package entry list from the selected base-profile plus any add-ons.
 
@@ -116,7 +117,7 @@ def build_pkg_entries(
     """
     entries: list[dict] = []
 
-    meta_packages = processor.profile_packages(profile_key, platform_key) if profile_key else []
+    meta_packages = processor.profile_packages(profile_key, platform_key, os_key) if profile_key else []
 
     # Level 0 — root
     root = _make_entry(
@@ -158,7 +159,7 @@ def build_pkg_entries(
     # Level 1 — Add-on packages section (one per selected optional profile)
     addon_packages: list[str] = []
     for addon_key in (addon_profile_keys or []):
-        addon_packages.extend(processor.addon_packages(addon_key, platform_key))
+        addon_packages.extend(processor.addon_packages(addon_key, platform_key, os_key))
 
     if addon_packages:
         addon_header = _make_entry(
@@ -248,6 +249,19 @@ def _any_descendant_active(entry: dict) -> bool:
 # Public: prerequisites (repo + gating package, checked before the normal install)
 # ---------------------------------------------------------------------------
 
+def _repo_identity(repo: dict) -> tuple:
+    """Dedup key for a repository entry.
+
+    Keyed on url + dist + components, not url alone: the same host can legitimately
+    serve two suites, and a url-only key would silently drop the second.
+    """
+    return (
+        repo.get("repository_url"),
+        repo.get("repository_dist") or "",
+        tuple(repo.get("repository_components") or ()),
+    )
+
+
 def required_prerequisites(
     processor: "Processor",
     profile_keys: list[str],
@@ -258,11 +272,11 @@ def required_prerequisites(
     Looks up ``processor.profile_prerequisites(key, os_key)`` for every key
     (base profile and/or add-ons), each of which may declare multiple
     ``repositories`` plus a ``packages`` list. Repos are deduped by
-    ``repository_url`` and packages by exact string, across all selected
-    profiles, into a single merged block.
-
+    ``_repo_identity`` and packages by exact string, across all selected
+    profiles, into a single merged block — so two add-ons sharing a PPA
+    register it once.
     """
-    seen_urls: set[str] = set()
+    seen_repos: set[tuple] = set()
     seen_packages: set[str] = set()
     repositories: list[dict] = []
     packages: list[str] = []
@@ -271,11 +285,12 @@ def required_prerequisites(
         if not prereq:
             continue
         for repo in prereq.get("repositories") or []:
-            url = repo.get("repository_url")
-            if url and url in seen_urls:
+            if not repo.get("repository_url"):
                 continue
-            if url:
-                seen_urls.add(url)
+            identity = _repo_identity(repo)
+            if identity in seen_repos:
+                continue
+            seen_repos.add(identity)
             repositories.append(repo)
         for pkg in prereq.get("packages") or []:
             if pkg in seen_packages:
@@ -283,6 +298,40 @@ def required_prerequisites(
             seen_packages.add(pkg)
             packages.append(pkg)
     return {"repositories": repositories, "packages": packages}
+
+
+def required_debconf_selections(
+    processor: "Processor",
+    profile_keys: list[str],
+) -> list[tuple[str, str, str, str]]:
+    """Collect the debconf answers declared by the given selected profile keys.
+
+    Returns (package, question, type, value) tuples in debconf-set-selections
+    field order, deduped on (package, question) so two profiles naming the same
+    question register it once — first profile wins. Entries missing any of the
+    four fields are skipped; malformed values are rejected later by
+    ``install_logic._debconf_entry``.
+    """
+    seen: set[tuple[str, str]] = set()
+    selections: list[tuple[str, str, str, str]] = []
+    for key in profile_keys or []:
+        if not key:
+            continue
+        for entry in processor.profile_debconf_selections(key):
+            package = str(entry.get("package") or "")
+            question = str(entry.get("question") or "")
+            qtype = str(entry.get("type") or "")
+            value = entry.get("value")
+            if not package or not question or not qtype or value is None:
+                continue
+            identity = (package, question)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            # YAML "value: true" must reach debconf as "true", not "True".
+            text = str(value).lower() if isinstance(value, bool) else str(value)
+            selections.append((package, question, qtype, text))
+    return selections
 
 
 # ---------------------------------------------------------------------------
@@ -303,13 +352,24 @@ def collect_selected_packages(pkg_entries: list[dict]) -> dict[str, str]:
     }
 
 
-def compute_total_size(pkg_entries: list[dict]) -> float:
-    """Sum sizes (in MiB) of all checked level-2 entries."""
-    total = 0.0
-    for entry in pkg_entries:
-        if entry["level"] == 2 and entry.get("checked"):
-            total += _parse_size(entry.get("size"))
-    return total
+# Level-1 header name build_pkg_entries() gives the base-profile section; anything
+# under a different header is an add-on.
+BASE_SECTION = "Packages"
+
+
+def split_base_and_addons(pkg_entries: list[dict]) -> tuple[list[str], list[str]]:
+    """Partition checked leaf package names into (base profile, add-on) lists.
+
+    Shared by Step 3 and Step 4 so both screens present the same grouping.
+    """
+    base: list[str] = []
+    addons: list[str] = []
+    for entry in pkg_entries or []:
+        if entry["level"] != 2 or not entry.get("checked"):
+            continue
+        parent = entry.get("parent") or {}
+        (base if parent.get("name") == BASE_SECTION else addons).append(entry["name"])
+    return base, addons
 
 
 def _selected_leaves(entry: dict) -> list[dict]:

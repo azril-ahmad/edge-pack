@@ -139,6 +139,45 @@ UnsupportedPlatformScreen {
 }
 
 /* ═══════════════════════════════════════════════
+   Cancel installation confirmation modal
+   ═══════════════════════════════════════════════ */
+CancelInstallScreen {
+    align: center middle;
+}
+
+#cancel-dialog {
+    width: 62;
+    height: auto;
+    border: thick $warning;
+    background: $surface;
+    padding: 1 2;
+}
+
+#cancel-title {
+    color: $warning;
+    text-style: bold;
+    content-align: center middle;
+    width: 1fr;
+    margin-bottom: 1;
+}
+
+#cancel-msg {
+    color: $text;
+    width: 1fr;
+    margin: 1 0;
+}
+
+#cancel-actions {
+    align: center middle;
+    margin-top: 1;
+    height: 3;
+}
+
+#cancel-actions Button {
+    margin: 0 1;
+}
+
+/* ═══════════════════════════════════════════════
    Restart prompt modal
    ═══════════════════════════════════════════════ */
 RestartPromptScreen {
@@ -224,11 +263,26 @@ Footer {
 #step1-left {
     width: 22%;
     min-width: 22;
+    height: 1fr;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Keep the scrollbar visible at rest so users can tell the panel scrolls. */
+    scrollbar-gutter: stable;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $surface-darken-2;
+    scrollbar-color: $accent;
+    scrollbar-color-hover: $accent-lighten-1;
+    scrollbar-color-active: $accent-lighten-1;
     border: round $primary 60%;
     border-title-color: $accent;
     border-title-style: bold;
     padding: 1 1;
     margin-right: 1;
+}
+
+/* Focusable so the panel can also be scrolled with the keyboard. */
+#step1-left:focus {
+    border: round $accent;
 }
 
 .info-label {
@@ -263,6 +317,8 @@ Footer {
 
 #step1-scroll {
     height: 1fr;
+    /* Floor the selectors so the EdgePack Version box isn't clipped on small terminals. */
+    min-height: 11;
     border: round $primary 60%;
     border-title-color: $accent;
     border-title-style: bold;
@@ -271,6 +327,10 @@ Footer {
 
 #step1-notes-box {
     height: auto;
+    /* Cap the informational notes so they yield space to the selectors above. */
+    max-height: 8;
+    overflow-y: auto;
+    scrollbar-size-vertical: 1;
     border: round $primary 60%;
     border-title-color: $accent;
     border-title-style: bold;
@@ -375,9 +435,23 @@ Footer {
 /* ═══════════════════════════════════════════════
    Step 2 — Profile review & add-on selection
    ═══════════════════════════════════════════════ */
+#step2-layer-container {
+    height: 1fr;
+    align: center middle;
+    layers: base overlay;
+}
+
+#step2-base {
+    layer: base;
+    width: 100%;
+    height: 100%;
+}
+
 #step2-outer {
     height: 1fr;
     padding: 1 2;
+    /* Scroll the whole step if the min-height regions don't fit a small terminal. */
+    overflow-y: auto;
 }
 
 /* ── Base profile box ── */
@@ -386,6 +460,10 @@ Footer {
     border-title-color: $accent;
     border-title-style: bold;
     height: auto;
+    /* Cap the base list so it can't starve the optional add-ons region. */
+    max-height: 9;
+    overflow-y: auto;
+    scrollbar-size-vertical: 1;
     padding: 1 1;
     margin-bottom: 1;
 }
@@ -409,6 +487,8 @@ Footer {
 
 #s2-addons-scroll {
     height: 1fr;
+    /* Never let the optional section shrink below a usable size. */
+    min-height: 7;
     border: round $primary 60%;
     padding: 0 1;
     margin-top: 0;
@@ -491,11 +571,15 @@ Footer {
     text-style: italic;
 }
 
-/* ── Selected packages summary ── */
+/* ── Packages to be installed summary ── */
 #s2-selected-summary {
     color: $accent;
     padding: 0 1;
-    height: 1;
+    /* Wrap the selected list instead of clipping it to one line; scroll if long. */
+    height: auto;
+    max-height: 3;
+    overflow-y: auto;
+    scrollbar-size-vertical: 1;
 }
 
 /* ── Action buttons ── */
@@ -503,6 +587,42 @@ Footer {
     height: 3;
     margin: 1 0;
     align: right middle;
+}
+
+#ipu-dialog {
+    layer: overlay;
+    width: 62;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+    display: none;
+}
+
+#ipu-title {
+    color: $warning;
+    text-style: bold;
+    content-align: center middle;
+    width: 1fr;
+    margin-bottom: 1;
+}
+
+#ipu-warning {
+    color: $warning;
+    text-style: bold;
+    width: 1fr;
+}
+
+#ipu-msg {
+    color: $text;
+    width: 1fr;
+    margin: 1 0;
+}
+
+#ipu-actions {
+    align: center middle;
+    margin-top: 1;
+    height: 3;
 }
 
 /* ═══════════════════════════════════════════════
@@ -517,6 +637,16 @@ Footer {
     height: 1fr;
     border: solid $primary 40%;
     padding: 1;
+    scrollbar-gutter: stable;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $surface-darken-2;
+    scrollbar-color: $accent;
+    scrollbar-color-hover: $accent-lighten-1;
+    scrollbar-color-active: $accent-lighten-1;
+}
+
+#step3-scroll:focus {
+    border: solid $accent;
 }
 
 #summary-content {
@@ -566,6 +696,13 @@ Footer {
 #step4-outer {
     padding: 0 2;
     height: 1fr;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $surface-darken-2;
+    scrollbar-color: $accent;
+    scrollbar-color-hover: $accent-lighten-1;
+    scrollbar-color-active: $accent-lighten-1;
 }
 
 /* Package status list */
@@ -578,12 +715,26 @@ Footer {
 
 #pkg-status-list {
     height: auto;
+    max-height: 6;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $surface-darken-2;
+    scrollbar-color: $accent;
+    scrollbar-color-hover: $accent-lighten-1;
+    scrollbar-color-active: $accent-lighten-1;
     margin-bottom: 1;
 }
 
 .pkg-status-row {
     height: 1;
     color: $text-muted;
+}
+
+.pkg-group-header {
+    height: 1;
+    color: $accent;
+    text-style: bold;
 }
 
 /* Progress bar & status label */
@@ -601,12 +752,15 @@ Footer {
 /* Log */
 #install-log {
     height: 1fr;
+    min-height: 9;
     border: solid $primary 40%;
     background: $surface-darken-1;
 }
 
 #step4-actions {
+    height: 3;
     margin: 1 0;
+    padding: 0 2;
     align: right middle;
 }
 

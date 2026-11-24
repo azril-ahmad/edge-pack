@@ -1,11 +1,16 @@
 # edgepack-installer.spec — PyInstaller build spec
 #
-# Build with:  pyinstaller edgepack-installer.spec
+# Build with:  ./build.sh --template prod|test
 #
 # Must be built on Ubuntu 24.04 (Noble) to ensure glibc compatibility with
 # the target Ubuntu 24.04 / 26.04 machines.
 
+import os
+
 from PyInstaller.utils.hooks import collect_data_files
+
+template_path = os.environ['EDGEPACK_TEMPLATE_PATH']
+binary_name = os.environ['EDGEPACK_BINARY_NAME']
 
 # Include Textual's bundled CSS/assets alongside the Python modules.
 textual_datas = collect_data_files('textual')
@@ -16,7 +21,7 @@ a = Analysis(
     binaries=[],
     datas=[
         # Project assets
-        ('data/edgepacks-template.yml',            'data'),
+        (template_path,                           'data'),
         ('tui/app.tcss',                           'tui'),
         ('edgepack_shared/dep_resolver.py',       'edgepack_shared'),
         # Textual runtime assets (themes, default CSS, etc.)
@@ -60,7 +65,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='edgepack-installer',
+    name=binary_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,         # strip ELF symbol tables from bundled binaries (smaller, less info for RE)
