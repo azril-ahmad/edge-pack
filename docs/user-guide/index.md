@@ -17,6 +17,9 @@
   </a>
 </div>
 hide_directive-->
+
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
 >📌 **Note:** 
 > Edge Pack is currently available as a technical preview for evaluation purposes, we do not
 > recommend this early version for use in production environments.
