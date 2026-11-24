@@ -1,5 +1,5 @@
-version: "2026.2-0001" # edgepack manifest version . version for this file in <edgepack-UI compatible version>-<versions for this yml file change>
-updated_datetime: "2026-09-21T02:20:00Z"  # date -u +"%Y-%m-%dT%H:%M:%SZ"
+version: "2026.3-0002" # edgepack manifest version . version for this file in <edgepack-UI compatible version>-<versions for this yml file change>
+updated_datetime: "2026-10-23T05:00:00Z"  # date -u +"%Y-%m-%dT%H:%M:%SZ"
 
 os_variant:
   ubuntu_noble:
@@ -46,16 +46,28 @@ platforms:
     description: "Intel Panther Lake"
     model_names:   # to autodetect for machine model, model keywords from  lscpu command    lscpu | grep "Model name"
       # Core Ultra X (High-Power Premium)
+      - "336H"
       - "338H"
       - "358H"
       - "356H"
+      - "366H"
       - "368H"
+      - "386H"
       - "388H"
       # Core Ultra H-Series
       - "325H"
       - "345H"
       - "355H"
       - "375H"
+      # Core Ultra 
+      - "365"
+      - "360"
+      - "355"
+      - "335"
+      - "325"
+      - "332"
+      - "322"
+      - "315"
   wcl:
     display_name: "Wildcat Lake"
     description: "Intel Wildcat Lake"
@@ -65,7 +77,39 @@ platforms:
       - "310"
       - "320"
       - "330"
-      - "350"  
+      - "350"
+
+hardware_ids:
+  tsn_nic:   
+    drivers:
+      - "igc"
+    devices:
+      "0x0D9F": "I225-IT"
+      "0x15F2": "I225-LM"
+      "0x15F3": "I225-V"
+      "0x15F8": "I225-I"
+      "0x15FD": "I225 (blank NVM)"
+      "0x3100": "I225-K"
+      "0x3101": "I225-K2"
+      "0x3102": "I226-K"
+      "0x5502": "I225-LMvP"
+      "0x5503": "I226-LMvP"
+      "0x125B": "I226-LM"
+      "0x125C": "I226-V"
+      "0x125D": "I226-IT"
+      "0x125F": "I226 (blank NVM)"
+
+  ipu:
+    devices:
+      "0x9a19": "IPU6 (Tiger Lake)"
+      "0x4e19": "IPU6SE (Jasper Lake)"
+      "0x465d": "IPU6EP (Alder Lake-P)"
+      "0x462e": "IPU6EP (Alder Lake-N)"
+      "0xa75d": "IPU6EP (Raptor Lake-P)"
+      "0x7d19": "IPU6EP (Meteor Lake)"
+      "0x645d": "IPU7"
+      "0xb05d": "IPU7P5 (Panther Lake)"
+      "0xd719": "IPU8"
 
 # updated profiles with base and other 
 base-profiles:
@@ -80,12 +124,21 @@ base-profiles:
       - "ubuntu_resolute"
     meta_packages: 
       - intel-edge-base-standard
-    meta_packages_by_os: # extras only added when running on the matching OS variant
+    prerequisites:
       ubuntu_noble:
-        - linux-firmware
+        repositories:
+          - repository_url: "https://snapshot.ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu/20260830T100000Z"
+            repository_dist: "noble"
+            repository_components:
+              - "main"
+            repository_key: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x0c0e6af955ce463c03fc51574d098d70afbe5e1f"
       ubuntu_resolute:
-        - linux-firmware-intel-graphics
-        - linux-firmware-intel-wireless
+        repositories:
+          - repository_url: "https://snapshot.ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu/20260830T100000Z"
+            repository_dist: "resolute"
+            repository_components:
+              - "main"
+            repository_key: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x0c0e6af955ce463c03fc51574d098d70afbe5e1f"
       
   base-realtime:
     display_name: "Intel Edge Realtime Profile"
@@ -94,9 +147,17 @@ base-profiles:
       - "ptl"
       - "wcl"
     supported_os_variants:
-      - "disabled"
+      - "ubuntu_resolute"
     meta_packages: 
       - intel-edge-base-realtime
+    prerequisites:
+      ubuntu_resolute:
+        repositories:
+          - repository_url: "https://snapshot.ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu/20260830T100000Z"
+            repository_dist: "resolute"
+            repository_components:
+              - "main"
+            repository_key: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x0c0e6af955ce463c03fc51574d098d70afbe5e1f"
 
 profiles:
 
@@ -106,6 +167,7 @@ profiles:
     category: "Application/Tools"
     base-profiles: # only available for these profile
       - base-standard
+      - base-realtime
     supported_platforms:
       - "ptl"
       - "wcl"
@@ -118,36 +180,12 @@ profiles:
     category: "Application/Tools"
     base-profiles: # only available for these profile
       - base-standard
+      - base-realtime
     supported_platforms:
       - "ptl"
       - "wcl"
     meta_packages: # additional package to install on top of base profiles
       - intel-edge-media-gst
-    meta_packages_by_os: # extras only added when running on the matching OS variant
-      ubuntu_resolute:
-        - gstreamer1.0-plugins-extra
-
-  npu:
-    display_name: "NPU"
-    description: "Software to enable Intel's Neural Processing Unit (NPU) on Edge platforms."
-    category: "Intel Technologies"
-    base-profiles: # only available for these profile
-      - base-standard
-    supported_platforms:
-      - "ptl"
-      - "wcl"
-    supported_os_variants:
-      - "ubuntu_noble"
-    meta_packages: # additional package to install on top of base profiles
-      - intel-edge-npu
-    prerequisites: 
-      ubuntu_noble:
-        repositories:
-          - repository_url: "https://snapshot.ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu/20260606T100000Z"
-            repository_dist: "noble"
-            repository_components:
-              - "main"
-            repository_key: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x0c0e6af955ce463c03fc51574d098d70afbe5e1f"
 
   manageability:
     display_name: "Manageability"
@@ -155,8 +193,53 @@ profiles:
     category: "Intel Technologies"
     base-profiles: # only available for these profile
       - base-standard
+      - base-realtime
     supported_platforms:
       - "ptl"
       - "wcl"
     meta_packages: # additional package to install on top of base profiles
       - intel-edge-manageability
+
+  ipu:
+    display_name: "IPU"
+    description: "Group of software components and ingredients to enable Intel's Image Processing Unit (IPU) technology on Edge platforms."
+    category: "Intel Technologies"
+    base-profiles: # only available for these profile
+      - base-standard
+      - base-realtime
+    supported_platforms:
+      - "ptl"
+    meta_packages: # additional package to install on top of base profiles
+      - intel-edge-ipu
+    # Preseeds for the selected GMSL driver, IPU generation, board, and sensor.
+    debconf_selections:
+      - package: intel-mipi-gmsl-dkms
+        question: intel-mipi-gmsl-dkms/max9x
+        type: select
+        value: maxim-serdes
+      - package: intel-mipi-gmsl-dkms
+        question: intel-mipi-gmsl-dkms/ipu
+        type: select
+        value: ipu7
+      - package: intel-mipi-gmsl-dkms
+        question: intel-mipi-gmsl-dkms/board
+        type: select
+        value: max96724-cexd-intrbl
+      - package: intel-mipi-gmsl-dkms
+        question: intel-mipi-gmsl-dkms/sensor
+        type: select
+        value: d3_isx031
+
+  tsn:
+    display_name: "TSN"
+    description: "Group of software components and ingredients to enable Intel's Time-Sensitive Networking (TSN) technology on Edge platforms."
+    category: "Intel Technologies"
+    included_in_base_profiles:
+      - base-realtime
+    base-profiles: # only available for these profile
+      - base-standard
+    supported_platforms:
+      - "ptl"
+      - "wcl"
+    meta_packages: # additional package to install on top of base profiles
+      - intel-edge-tsn

@@ -13,6 +13,7 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 
 from .base import BaseWizardScreen
+from edgepack_shared.install_logic import allow_insecure_repos
 from textual.widgets import Button, Footer, Header, RadioButton, RadioSet, Rule, Static
 
 
@@ -184,7 +185,8 @@ class Step1Screen(BaseWizardScreen):
 
         with Horizontal(id="step1-main"):
             # ── Left panel: system information ────────────────────────
-            with Vertical(id="step1-left") as left:
+            # Scrollable so the lower rows stay reachable on short terminals.
+            with ScrollableContainer(id="step1-left") as left:
                 left.border_title = " ℹ  System Info "
                 yield Static("Detected OS", classes="info-label")
                 yield Static("—", id="info-os-value", classes="info-value")
@@ -195,6 +197,12 @@ class Step1Screen(BaseWizardScreen):
                 yield Rule()
                 yield Static("Detected Kernel", classes="info-label")
                 yield Static("—", id="info-kernel-value", classes="info-value")
+                yield Rule()
+                yield Static("TSN Capable NIC", classes="info-label")
+                yield Static("—", id="info-tsn-value", classes="info-value")
+                yield Rule()
+                yield Static("IPU Status", classes="info-label")
+                yield Static("—", id="info-ipu-value", classes="info-value")
                 yield Rule()
                 yield Static("⚠  Warnings", classes="info-label")
                 yield Static("None", id="info-warnings-value", classes="info-value info-ok")
@@ -218,13 +226,13 @@ class Step1Screen(BaseWizardScreen):
                     with Vertical(classes="group-box", id="box-version") as box:
                         box.border_title = " ○  EdgePack Version "
                         with RadioSet(id=_radiset_id("version")):
-                            yield RadioButton("v2026.2", name="2026.2", id=_radio_id("version", 0), value=True)
+                            yield RadioButton("v2026.3", name="2026.3", id=_radio_id("version", 0), value=True)
 
                 # Bottom right: hardcoded notes
                 with Vertical(id="step1-notes-box") as notes:
                     notes.border_title = " ✎  Notes "
                     yield Static(
-                        "• Requires [bold]sudo / root[/bold] privileges to install packages.",
+                        "• Runs with [bold]sudo / root[/bold] privileges — EdgePack repositories are configured at startup.",
                         markup=True, classes="note-line",
                     )
                     yield Static(
@@ -269,6 +277,25 @@ class Step1Screen(BaseWizardScreen):
         """Move focus to the next enabled Button (right arrow)."""
         self._move_button_focus(1)
 
+    def action_navigate_up(self) -> None:
+        if not self._scroll_info_panel(-1):
+            super().action_navigate_up()
+
+    def action_navigate_down(self) -> None:
+        if not self._scroll_info_panel(1):
+            super().action_navigate_down()
+
+    def _scroll_info_panel(self, delta: int) -> bool:
+        """Scroll the focused System Info panel; return False at its edges so focus moves on."""
+        panel = self.query_one("#step1-left", ScrollableContainer)
+        if self.focused is not panel:
+            return False
+        offset = panel.scroll_offset.y
+        if (delta > 0 and offset >= panel.max_scroll_y) or (delta < 0 and offset <= 0):
+            return False
+        panel.scroll_relative(y=delta, animate=False)
+        return True
+
     def _move_button_focus(self, delta: int) -> None:
         focused = self.focused
         if not isinstance(focused, Button):
@@ -307,6 +334,16 @@ class Step1Screen(BaseWizardScreen):
         # Populate left panel — Detected Kernel
         self.query_one("#info-kernel-value", Static).update(app.detected_kernel_release or "—")
 
+        # Populate left panel — TSN capability (Intel I225-generation NIC or later)
+        tsn_widget = self.query_one("#info-tsn-value", Static)
+        tsn_widget.update(app.detected_tsn_description or "Not detected")
+        tsn_widget.set_class(not app.tsn_supported, "info-unrecognized")
+
+        # Populate left panel — IPU health from the kernel log
+        ipu_widget = self.query_one("#info-ipu-value", Static)
+        ipu_widget.update(app.detected_ipu_description or "Not detected")
+        ipu_widget.set_class(not app.ipu_healthy, "info-unrecognized")
+
         # Populate left panel — Warnings (platform / OS checks)
         if not app.os_supported:
             os_names = ", ".join(app.processor.supported_os_labels())
@@ -318,6 +355,15 @@ class Step1Screen(BaseWizardScreen):
             self._system_warnings.append(app.os_version_warning)
         if not app.kernel_version_met and app.kernel_version_warning:
             self._system_warnings.append(app.kernel_version_warning)
+        if not app.tsn_supported and app.tsn_warning:
+            self._system_warnings.append(app.tsn_warning)
+        if not app.ipu_healthy and app.ipu_warning:
+            self._system_warnings.append(app.ipu_warning)
+        if allow_insecure_repos():
+            self._system_warnings.append(
+                "Repository https enforcement is disabled (--allow-insecure-repos) — "
+                "developer testing only"
+            )
         self._refresh_warnings_panel([])
 
         self._apply_constraints()

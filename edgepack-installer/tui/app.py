@@ -14,10 +14,15 @@ from textual.theme import Theme
 from textual.widgets import Footer, Header, Static
 
 from edgepack_shared.processor import Processor
-from edgepack_shared.package_status import query_installed_versions
+from edgepack_shared.package_status import query_package_status
+from edgepack_shared.install_logic import (
+    prepare_repositories, direct_dependencies, cancel_elevated_commands,
+)
 from edgepack_shared.host import (
     read_os_release, host_cpu_model, host_kernel_type, host_os_dot_version,
     host_kernel_release, host_kernel_dot_version, host_kernel_is_ubuntu,
+    host_tsn_nics, host_tsn_summary, host_ipu_status, host_ipu_summary,
+    host_ipu_warning,
 )
 from edgepack_shared.log import ep_logger
 from tui.screens.about import PRODUCT_NAME
@@ -166,6 +171,14 @@ class EdgePackTUI(App[None]):
         self.kernel_version_met: bool = False
         self.kernel_version_warning: str = ''
         self.detected_kernel_is_ubuntu: bool = False
+        self.detected_tsn_nics: list[dict] = []
+        self.detected_tsn_description: str = 'Not detected'
+        self.tsn_supported: bool = False
+        self.tsn_warning: str = ''
+        self.detected_ipu_status: dict = {}
+        self.detected_ipu_description: str = 'Not detected'
+        self.ipu_healthy: bool = False
+        self.ipu_warning: str = ''
         
         try:
             self.logger.debug("Loading YAML template...")
@@ -225,6 +238,37 @@ class EdgePackTUI(App[None]):
                 self.kernel_version_met,
             )
 
+            # TSN (Time-Sensitive Networking) capability — requires an Intel
+            # I225-generation or later NIC. Informational only: a host without
+            # one can still install, so this never blocks the wizard.
+            self.detected_tsn_nics = host_tsn_nics(
+                self.processor.tsn_nic_device_ids(), self.processor.tsn_nic_drivers()
+            )
+            self.detected_tsn_description = host_tsn_summary(self.detected_tsn_nics)
+            self.tsn_supported = bool(self.detected_tsn_nics)
+            self.tsn_warning = (
+                '' if self.tsn_supported else
+                'No TSN-capable NIC detected — Time-Sensitive Networking requires '
+                'an Intel I225/I226 (or later) Ethernet controller'
+            )
+            self.logger.info(
+                "TSN detection: supported=%s, nics=%s",
+                self.tsn_supported, self.detected_tsn_description,
+            )
+
+            # IPU (camera Image Processing Unit) presence — detected on the PCI
+            # bus. Informational only, like the TSN check.
+            self.detected_ipu_status = host_ipu_status(
+                device_ids=self.processor.ipu_device_ids()
+            )
+            self.detected_ipu_description = host_ipu_summary(self.detected_ipu_status)
+            self.ipu_healthy = bool(self.detected_ipu_status.get('healthy'))
+            self.ipu_warning = host_ipu_warning(self.detected_ipu_status)
+            self.logger.info(
+                "IPU detection: healthy=%s, status=%s",
+                self.ipu_healthy, self.detected_ipu_description,
+            )
+
             # Raw host strings for display when YAML detection doesn't match.
             self.detected_os_name: str = (
                 _os_info.get('PRETTY_NAME')
@@ -244,6 +288,10 @@ class EdgePackTUI(App[None]):
                 self.logger.warning("Unknown kernel variant detected")
             if not self.kernel_version_met:
                 self.logger.warning("Kernel version below minimum requirement")
+            if not self.tsn_supported:
+                self.logger.warning("No TSN-capable NIC (Intel I225 or later) detected")
+            if not self.ipu_healthy:
+                self.logger.warning("IPU check did not pass: %s", self.detected_ipu_description)
         except Exception as e:
             self.logger.exception(
                 "Failed to detect system specification — continuing with limited functionality. "
@@ -272,6 +320,24 @@ class EdgePackTUI(App[None]):
         # ---------- Pre-existing packages ------
         # {package_name: installed_version} populated at startup.
         self.installed_versions: dict[str, str] = {}
+
+        # ---------- Repository preparation -----
+        # The apt repositories are registered and the index refreshed in the
+        # background while the user works through Step 1/2, so Step 3 can show
+        # the candidate version of every selected package.
+        # repo_status: 'pending' until the worker finishes, then 'ready' or 'failed'.
+        self.repo_status: str = "pending"
+        self.repo_error: str = ""
+        # {package_name: {'installed': str|None, 'candidate': str|None, 'state': str}}
+        self.package_status: dict[str, dict] = {}
+
+        # ---------- Base profile dependencies --
+        # Resolved on demand when Step 3 opens (the closure depends on the
+        # Step 1/2 selection). Add-on packages are deliberately not expanded.
+        # dep_status: 'idle' | 'pending' | 'ready' | 'failed'
+        self.dep_status: str = "idle"
+        self.base_dependencies: list[str] = []
+        self._dep_resolved_for: tuple[str, ...] = ()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -308,8 +374,14 @@ class EdgePackTUI(App[None]):
         self.logger.debug("Step1Screen pushed")
 
         # Scan installed packages in background — non-blocking
-        self.run_worker(self._scan_installed, thread=True)
-        self.logger.debug("Background worker started for package scanning")
+        self.run_worker(self._prepare_environment, thread=True)
+        self.logger.debug("Background worker started for repository setup and package scanning")
+
+    async def action_quit(self) -> None:
+        # The startup worker may be blocked in apt; the interpreter would wait
+        # for it at exit, leaving a dead UI and a live process.
+        cancel_elevated_commands()
+        await super().action_quit()
 
     def on_resize(self, event) -> None:
         """Push/pop TooSmallScreen as the terminal crosses the minimum size threshold."""
@@ -330,22 +402,112 @@ class EdgePackTUI(App[None]):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _scan_installed(self) -> None:
-        """Background worker: detect pre-installed Intel Edge packages."""
-        names = list(self.processor.all_package_names())
-        self.logger.debug("Scanning %d package names for installed versions", len(names))
-        self.installed_versions = query_installed_versions(names)
-        self.logger.info("Package scan complete: %d packages already installed", len(self.installed_versions))
-        if self.installed_versions:
-            self.logger.debug("Installed packages: %s", self.installed_versions)
-        # Refresh Step 1 installed-profile warnings now that results are available.
-        self.call_from_thread(self._refresh_installed_warnings)
+    def _prepare_environment(self) -> None:
+        """Background worker: register repositories, refresh the apt index, then scan versions.
 
-    def _refresh_installed_warnings(self) -> None:
-        """Update Step1Screen's per-profile warnings after the background scan completes."""
+        The version scan runs even when the refresh failed so the wizard can
+        still report what is installed locally; those packages simply have no
+        candidate version to compare against.
+        """
+        try:
+            self._prepare_environment_inner()
+        except Exception:
+            # Never leave Step 3 spinning on "pending" because the worker died.
+            self.logger.exception("Environment preparation failed")
+            self.repo_error = (
+                "Could not check package versions on this system. "
+                "Installation can still proceed."
+            )
+            self.repo_status = "failed"
+            self.call_from_thread(self._on_environment_ready)
+
+    def _prepare_environment_inner(self) -> None:
+        # Only the OS-level EdgePack repositories are registered here. Add-on
+        # prerequisite repos (e.g. the graphics PPA) are deliberately left to
+        # Step 4, so the host only ever gains the repos the user actually chose.
+        repos = list((self.detected_os_entry or {}).get("repositories", {}).values())
+        self.logger.debug(
+            "Preparing %d repositories for OS %s", len(repos), self.detected_os_key,
+        )
+
+        ok, message = prepare_repositories(repos)
+
+        names = list(self.processor.all_package_names())
+        self.logger.debug("Scanning %d package names for installed/candidate versions", len(names))
+        package_status = query_package_status(names)
+        self.package_status = package_status
+        self.installed_versions = {
+            name: info["installed"]
+            for name, info in package_status.items()
+            if info.get("installed")
+        }
+        # Published last: Step 3 polls repo_status, and flipping it before the
+        # scan lands would briefly render every package as "Unknown".
+        self.repo_error = message
+        self.repo_status = "ready" if ok else "failed"
+        self.logger.info(
+            "Package scan complete: repo_status=%s, %d packages already installed",
+            self.repo_status, len(self.installed_versions),
+        )
+        self.call_from_thread(self._on_environment_ready)
+
+    def _on_environment_ready(self) -> None:
+        """Refresh whichever screen is showing once the background scan completes."""
         from .screens.step1 import Step1Screen
+        from .screens.step3 import Step3Screen
         if isinstance(self.screen, Step1Screen):
             self.screen._update_installed_warnings()
+        elif isinstance(self.screen, Step3Screen):
+            self.screen.refresh_package_status()
+
+    def request_base_dependencies(self, base_packages: list[str]) -> None:
+        """Start resolving *base_packages*' dependency closure, unless already done.
+
+        Called by Step 3. Results are cached against the package list so
+        stepping back and forward does not re-run the resolver.
+        """
+        key = tuple(base_packages)
+        if not key:
+            self.dep_status = "ready"
+            self.base_dependencies = []
+            return
+        if self._dep_resolved_for == key and self.dep_status in ("ready", "failed"):
+            return
+        if self.dep_status == "pending":
+            return
+        self._dep_resolved_for = key
+        self.dep_status = "pending"
+        self.run_worker(lambda: self._resolve_dependencies(list(key)), thread=True)
+
+    def _resolve_dependencies(self, base_packages: list[str]) -> None:
+        """Background worker: list the base profile's direct dependencies and scan their versions."""
+        self.logger.debug("Resolving dependencies for %s", ", ".join(base_packages))
+        try:
+            ok, resolved = direct_dependencies(base_packages)
+            if ok:
+                names = [name for name in resolved if name not in self.package_status]
+                if names:
+                    self.package_status.update(query_package_status(names))
+                # Published last, for the same reason as _prepare_environment.
+                self.base_dependencies = resolved
+                self.dep_status = "ready"
+            else:
+                self.base_dependencies = []
+                self.dep_status = "failed"
+        except Exception:
+            self.logger.exception("Dependency lookup failed")
+            self.base_dependencies = []
+            self.dep_status = "failed"
+        self.logger.info(
+            "Dependency resolution %s (%d packages)",
+            self.dep_status, len(self.base_dependencies),
+        )
+        self.call_from_thread(self._on_dependencies_ready)
+
+    def _on_dependencies_ready(self) -> None:
+        from .screens.step3 import Step3Screen
+        if isinstance(self.screen, Step3Screen):
+            self.screen.refresh_package_status()
 
     def action_show_about(self) -> None:
         """Push the About modal (F1)."""

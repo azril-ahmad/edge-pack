@@ -4,7 +4,7 @@
 # add-on profiles) directly from the command line, without stepping through
 # the TUI wizard, e.g.:
 #
-#     sudo ./edgepack-installer install base-standard npu
+#     sudo ./edgepack-installer install base-standard ipu
 #     ./edgepack-installer list
 #
 # Reuses the same Processor/package_logic/install_logic building blocks as
@@ -17,17 +17,31 @@ from __future__ import annotations
 import logging
 import os
 import re
+import signal
 import sys
 import threading
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
 
 from edgepack_shared.host import (
     host_cpu_model, read_os_release, host_os_dot_version,
     host_kernel_release, host_kernel_dot_version, host_kernel_is_ubuntu,
+    host_tsn_nics, host_tsn_summary,
+    host_ipu_status, host_ipu_summary, host_ipu_warning,
 )
 from edgepack_shared.install_logic import run_install
+from edgepack_shared.log import open_secure_log, rotate_logs, secure_log_path
+from edgepack_shared.package_report import (
+    apt_cache_policy_origins,
+    apt_dependency_closure,
+    parse_get_line,
+    parse_resolved_line,
+    write_package_summary,
+)
 from edgepack_shared.processor import Processor
 
-from .package_logic import required_prerequisites
+from .package_logic import required_debconf_selections, required_prerequisites
 
 
 def _make_cli_logger() -> logging.Logger:
@@ -38,6 +52,112 @@ def _make_cli_logger() -> logging.Logger:
 
 
 logger: logging.Logger | None = None  # initialised on first call to install_command
+
+
+_CLI_LOG_DIR = Path("/var/log/edgepack")
+
+
+class _CliStream:
+    def __init__(self, stream, session):
+        self.stream = stream
+        self.session = session
+        self.failed = False
+
+    def write(self, text):
+        with self.session.lock:
+            self.session.write_log(text)
+            if not self.failed:
+                try:
+                    self.stream.write(text)
+                    self.stream.flush()
+                except (OSError, ValueError):
+                    self.failed = True
+                    self.session.write_log("\nWarning: terminal output unavailable; installation remains managed.\n")
+                    try:
+                        descriptor = os.open(os.devnull, os.O_WRONLY)
+                        try:
+                            os.dup2(descriptor, self.stream.fileno())
+                        finally:
+                            os.close(descriptor)
+                    except (OSError, ValueError, AttributeError):
+                        pass
+        return len(text)
+
+    def flush(self):
+        return None
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+class _CliSession:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.log_file = None
+        self.log_path = None
+        self.package_report_path = None
+        self.saved_package_report_path = None
+        self.log_error = False
+        self.stdout = sys.stdout
+        self.stderr = sys.stderr
+
+    def __enter__(self):
+        sys.stdout = _CliStream(self.stdout, self)
+        sys.stderr = _CliStream(self.stderr, self)
+        if os.geteuid() == 0:
+            try:
+                _CLI_LOG_DIR.mkdir(parents=True, exist_ok=True)
+                secure_log_path(_CLI_LOG_DIR, is_dir=True)
+                rotate_logs(str(_CLI_LOG_DIR), max_age_days=30, max_count=9)
+                stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                self.package_report_path = _CLI_LOG_DIR / f"edgepack-packages-{stamp}.log"
+                path = _CLI_LOG_DIR / f"edgepack-installer-{stamp}.log"
+                self.log_file = open_secure_log(str(path), buffering=1)
+                self.log_path = path
+                print(f"Installation log: {path}")
+                print(f"Started: {datetime.now().isoformat(timespec='seconds')}")
+            except OSError:
+                self.warn_log_failure()
+        return self
+
+    def warn_log_failure(self):
+        if not self.log_error:
+            self.log_error = True
+            try:
+                self.stderr.write("warning: installation log unavailable; output may not be saved\n")
+                self.stderr.flush()
+            except (OSError, ValueError):
+                pass
+
+    def write_log(self, text):
+        if self.log_file is not None:
+            try:
+                self.log_file.write(text)
+            except (OSError, ValueError):
+                self.close_log()
+                self.warn_log_failure()
+
+    def close_log(self):
+        log_file, self.log_file = self.log_file, None
+        if log_file is not None:
+            try:
+                log_file.close()
+            except OSError:
+                self.warn_log_failure()
+
+    def record_package_report(self, path: str):
+        self.saved_package_report_path = path
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            self.write_log(f"\nCLI exited before normal completion: {exc_type.__name__}\n")
+        self.close_log()
+        if self.log_path is not None and not self.log_error:
+            print(f"Installation log: {self.log_path}")
+        if self.saved_package_report_path is not None:
+            print(f"Package report: {self.saved_package_report_path}")
+        sys.stdout = self.stdout
+        sys.stderr = self.stderr
 
 
 def _dedupe(seq: list[str]) -> list[str]:
@@ -54,7 +174,8 @@ def _check_host_requirements(processor: Processor) -> dict:
     """Run the same platform/OS/kernel checks the TUI performs at startup (app.py __init__).
 
     Returns detected platform/os key+entry plus an 'issues' list of
-    human-readable failure reasons — empty when the host qualifies.
+    human-readable failure reasons — empty when the host qualifies, and a
+    non-fatal 'warnings' list (e.g. missing TSN-capable NIC).
     """
     cpu_model = host_cpu_model()
     platform_key, platform_entry = processor.detect_platform(cpu_model)
@@ -81,12 +202,33 @@ def _check_host_requirements(processor: Processor) -> dict:
     kernel_dot_version = host_kernel_dot_version(host_kernel_release())
     issues.extend(processor.kernel_version_issues(kernel_dot_version, os_key, host_kernel_is_ubuntu()))
 
+    # TSN capability is informational — a host without an Intel I225-generation
+    # (or later) NIC can still install, so this is a warning, never an issue.
+    tsn_nics = host_tsn_nics(processor.tsn_nic_device_ids(), processor.tsn_nic_drivers())
+    warnings: list[str] = []
+    if not tsn_nics:
+        warnings.append(
+            "No TSN-capable NIC detected — Time-Sensitive Networking requires "
+            "an Intel I225/I226 (or later) Ethernet controller"
+        )
+
+    # IPU health from the kernel log — also informational.
+    ipu_status = host_ipu_status(device_ids=processor.ipu_device_ids())
+    ipu_warning = host_ipu_warning(ipu_status)
+    if ipu_warning:
+        warnings.append(ipu_warning)
+
     return {
         "platform_key": platform_key,
         "platform_entry": platform_entry,
         "os_key": os_key,
         "os_entry": os_entry,
+        "tsn_nics": tsn_nics,
+        "tsn_description": host_tsn_summary(tsn_nics),
+        "ipu_status": ipu_status,
+        "ipu_description": host_ipu_summary(ipu_status),
         "issues": issues,
+        "warnings": warnings,
     }
 
 
@@ -113,13 +255,16 @@ def list_command(processor: Processor) -> None:
     for key, entry in addon_profiles.items():
         entry = entry or {}
         display = entry.get("display_name") or key
-        requires = ", ".join(entry.get("base-profiles") or []) or "any base profile"
+        optional_with = ", ".join(entry.get("base-profiles") or []) or "any base profile"
         print(f"  {key.ljust(key_width)}  {display}")
-        print(f"  {' ' * key_width}  (requires base: {requires})")
+        print(f"  {' ' * key_width}  Optional with: {optional_with}")
+        included_in = entry.get("included_in_base_profiles") or []
+        if included_in:
+            print(f"  {' ' * key_width}  Already included in: {', '.join(included_in)}")
 
     print("\nUsage:")
     print("  edgepack-installer install <base-profile> [addon ...]")
-    print("  e.g. sudo edgepack-installer install base-standard npu")
+    print("  e.g. sudo edgepack-installer install base-standard ipu")
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +279,7 @@ _MAX_PROFILE_KEY_LEN = 128
 def _validate_profile_key(key: str, label: str) -> int | None:
     """Return an exit code (non-zero) if *key* is invalid, else None."""
     if not key:
+        print(f"error: {label} must not be empty", file=sys.stderr)
         return 2
     if len(key) > _MAX_PROFILE_KEY_LEN:
         print(
@@ -155,6 +301,25 @@ def _validate_profile_key(key: str, label: str) -> int | None:
 
 
 def install_command(args) -> int:
+    """Run an unattended installation with resilient output and a transaction log."""
+    with _CliSession() as session:
+        try:
+            code = _install_command(
+                args, package_report_path=session.package_report_path,
+                package_report_callback=session.record_package_report,
+            )
+        except KeyboardInterrupt:
+            session.write_log("\nCLI exit code: 130\n")
+            raise
+        except Exception:
+            session.write_log("\nCLI exit code: 1 (unexpected error)\n")
+            raise
+        session.write_log(f"\nCLI exit code: {code}\n")
+        return code
+
+
+def _install_command(args, package_report_path: Path | None = None,
+                     package_report_callback: Callable[[str], None] | None = None) -> int:
     """Resolve, validate, and install *args.base_profile* + *args.addons*.
 
     Mirrors the checks enforced by the TUI (host requirements at startup,
@@ -213,6 +378,9 @@ def install_command(args) -> int:
         logger.warning("Host does not meet installation requirements: %s", "; ".join(host["issues"]))
         return 4
     print("System requirements: OK")
+    for warning in host["warnings"]:
+        print(f"warning: {warning}")
+        logger.warning("%s", warning)
 
     platform_key, platform_entry = host["platform_key"], host["platform_entry"]
     os_key, os_entry = host["os_key"], host["os_entry"]
@@ -269,6 +437,7 @@ def install_command(args) -> int:
         return 3
 
     prerequisites = required_prerequisites(processor, [args.base_profile, *args.addons], os_key)
+    debconf_selections = required_debconf_selections(processor, [args.base_profile, *args.addons])
     repos = list((os_entry or {}).get("repositories", {}).values())
 
     hidden_packages: list[str] = []
@@ -280,6 +449,8 @@ def install_command(args) -> int:
     print(f"Add-ons      : {', '.join(args.addons) if args.addons else '(none)'}")
     print(f"Platform     : {platform_display}")
     print(f"OS           : {os_display}")
+    print(f"TSN NIC      : {host['tsn_description']}")
+    print(f"IPU          : {host['ipu_description']}")
     print("Packages to install:")
     for name in packages:
         print(f"  - {name}")
@@ -287,26 +458,48 @@ def install_command(args) -> int:
         print("Prerequisite packages:")
         for name in prerequisites["packages"]:
             print(f"  - {name}")
+    if debconf_selections:
+        print("Preseeded configuration:")
+        for package, question, _type, value in debconf_selections:
+            print(f"  - {package}: {question} = {value}")
 
     # No confirmation prompt — this path is unattended for scripted validation.
     print("\nRequirements met — proceeding with installation...\n")
-    code = _run_install_blocking(packages, repos, prerequisites, hidden_packages)
+    code = _run_install_blocking(
+        packages, repos, prerequisites, hidden_packages, debconf_selections,
+        package_report_path=package_report_path,
+        package_report_callback=package_report_callback,
+    )
 
     if code == 0:
         print("\n\u2714 Installation completed successfully.")
         print("  A system restart is recommended to apply all changes.")
+    elif code in (130, 143, 129):
+        print(f"\nInstallation cancelled (exit code {code}); installation process has exited.", file=sys.stderr)
     else:
         print(f"\n\u2718 Installation failed (exit code {code}). See output above for details.", file=sys.stderr)
     return code
 
 
 def _run_install_blocking(packages: list[str], repos: list[dict], prerequisites: dict,
-                          force_packages: list[str] | None = None) -> int:
+                          force_packages: list[str] | None = None,
+                          debconf_selections: list[tuple] | None = None,
+                          package_report_path: Path | None = None,
+                          package_report_callback: Callable[[str], None] | None = None) -> int:
     """Run edgepack_shared.install_logic.run_install synchronously and stream its output."""
     done = threading.Event()
     result = {"code": 1}
+    downloaded: dict[str, tuple[str, str]] = {}
+    resolved: set[str] = set()
 
     def _on_output(line: str) -> None:
+        stripped = line.strip()
+        parsed = parse_get_line(stripped)
+        if parsed:
+            name, version, origin = parsed
+            downloaded[name] = (version, origin)
+        if stripped.startswith("Resolved:"):
+            resolved.update(parse_resolved_line(stripped))
         sys.stdout.write(line if line.endswith("\n") else line + "\n")
         sys.stdout.flush()
 
@@ -314,14 +507,55 @@ def _run_install_blocking(packages: list[str], repos: list[dict], prerequisites:
         result["code"] = code
         done.set()
 
-    run_install(
-        [(name, "") for name in packages],
-        repos,
-        output_callback=_on_output,
-        finished_callback=_on_finished,
-        sudo_password=None,
-        prerequisites=prerequisites,
-        force_packages=force_packages,
-    )
-    done.wait()
-    return result["code"]
+    pending_signal = None
+    cancelled_signal = None
+    refusal_reported = False
+    previous_handlers = {}
+
+    def _on_signal(signum, frame):
+        nonlocal pending_signal
+        if pending_signal is None:
+            pending_signal = signum
+
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            previous_handlers[signum] = signal.signal(signum, _on_signal)
+        handle = run_install(
+            [(name, "") for name in packages],
+            repos,
+            output_callback=_on_output,
+            finished_callback=_on_finished,
+            sudo_password=None,
+            prerequisites=prerequisites,
+            force_packages=force_packages,
+            debconf_selections=debconf_selections,
+        )
+        while not done.wait(0.1):
+            if pending_signal is not None:
+                signum, pending_signal = pending_signal, None
+                if cancelled_signal is None and not refusal_reported:
+                    if handle.cancel():
+                        cancelled_signal = signum
+                        print("Cancellation requested; waiting for the installation process to exit...", file=sys.stderr)
+                    elif handle.dpkg_started:
+                        refusal_reported = True
+                        print("Cannot cancel: package configuration has started. Waiting for installation to finish safely.", file=sys.stderr)
+        if cancelled_signal is not None:
+            return 128 + cancelled_signal
+        code = result["code"]
+        if code == 0 and package_report_path is not None:
+            try:
+                expected = resolved | {name.split("=")[0] for name in prerequisites.get("packages", [])}
+                expected = expected | apt_dependency_closure(expected)
+                cached = apt_cache_policy_origins(expected - set(downloaded))
+                path = write_package_summary([str(package_report_path)], downloaded, cached)
+                if path:
+                    if package_report_callback:
+                        package_report_callback(path)
+                    print(f"Full Software BOM saved to: {path}")
+            except Exception:
+                print("warning: could not save the Software BOM; installation result is unchanged", file=sys.stderr)
+        return 128 - code if code < 0 else code
+    finally:
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)

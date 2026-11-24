@@ -2,11 +2,87 @@
 #
 # SPDX-License-Identifier: MIT
 
+import atexit
 import os
+import shutil
+import stat
 import sys
+import tempfile
+import urllib.error
+import urllib.request
 import yaml
 
 from .host import host_cpu_model, read_os_release
+
+# Developer-only template override (--template-url). Set once at startup by
+# tui/main.py, before any Processor.load() call.
+_TEMPLATE_PATH_OVERRIDE: str | None = None
+
+# A template is a small config file; anything larger is rejected rather than
+# buffered, so a hostile or wrong URL cannot exhaust memory.
+_TEMPLATE_MAX_BYTES = 1 << 20
+_TEMPLATE_FETCH_TIMEOUT = 30
+_TEMPLATE_REQUIRED_SECTIONS = ("os_variant", "platforms", "base-profiles", "profiles")
+
+
+class _HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects that would downgrade the transport away from https."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not str(newurl).lower().startswith("https://"):
+            raise urllib.error.URLError("refused a non-https redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_template(url: str, timeout: int = _TEMPLATE_FETCH_TIMEOUT) -> str:
+    """Download a template YAML from *url* and return the local path it was saved to.
+
+    Raises ValueError for anything that isn't a plausible template: a non-https
+    URL, an oversized or non-UTF-8 body, YAML that isn't a mapping, or a mapping
+    missing the sections the installer depends on. The file is written into a
+    private 0700 temp directory so the unpredictable path cannot be pre-created
+    or symlinked by another local user.
+    """
+    if not str(url).strip().lower().startswith("https://"):
+        raise ValueError("template URL must use https://")
+
+    opener = urllib.request.build_opener(_HTTPSOnlyRedirectHandler)
+    request = urllib.request.Request(url, headers={"User-Agent": "edgepack-installer"})
+    # Scheme is validated as https above and on every redirect hop.
+    with opener.open(request, timeout=timeout) as response:  # nosec B310
+        raw = response.read(_TEMPLATE_MAX_BYTES + 1)
+    if len(raw) > _TEMPLATE_MAX_BYTES:
+        raise ValueError(f"template exceeds the {_TEMPLATE_MAX_BYTES} byte limit")
+
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("template is not valid UTF-8 text") from None
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise ValueError(f"template is not valid YAML: {e}") from None
+    if not isinstance(data, dict):
+        raise ValueError("template must be a YAML mapping")
+    missing = [s for s in _TEMPLATE_REQUIRED_SECTIONS if not isinstance(data.get(s), dict)]
+    if missing:
+        raise ValueError(f"template is missing required sections: {', '.join(missing)}")
+
+    path = os.path.join(
+        tempfile.mkdtemp(prefix="edgepack-template-"), "edgepacks-template.yml",
+    )
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    # The template is only needed for the lifetime of this run.
+    atexit.register(shutil.rmtree, os.path.dirname(path), ignore_errors=True)
+    return path
+
+
+def set_template_path(path: str) -> None:
+    """Make every later ``Processor.load()`` read *path* instead of the bundled template."""
+    global _TEMPLATE_PATH_OVERRIDE
+    _TEMPLATE_PATH_OVERRIDE = path
 
 
 def _resolve_platform_packages(pkgs, platform_key: str | None) -> list[str]:
@@ -83,6 +159,30 @@ def _as_dict(value):
     return value if isinstance(value, dict) else {}
 
 
+def _parse_device_id_map(devices) -> dict:
+    """Parse a YAML ``"0x15F3": "I225-V"`` map into ``{0x15f3: 'I225-V'}``.
+
+    Accepts quoted hex strings (the documented form), bare decimal/hex strings,
+    and ints (what PyYAML produces for an unquoted ``0x15F3``). Entries that
+    aren't valid ids are skipped rather than raising, so one bad line in the
+    template can't stop the installer from starting.
+    """
+    parsed: dict[int, str] = {}
+    for key, name in _as_dict(devices).items():
+        if isinstance(key, bool):
+            continue
+        if isinstance(key, int):
+            device_id = key
+        else:
+            try:
+                raw_key = str(key).strip()
+                device_id = int(raw_key, 10 if raw_key.isdecimal() else 16)
+            except ValueError:
+                continue
+        parsed[device_id] = str(name).strip()
+    return parsed
+
+
 class Processor:
     """Wrapper around the parsed edgepacks-template.yml.
 
@@ -99,6 +199,10 @@ class Processor:
     @classmethod
     def load(cls):
         """Load from gresource if available, else from disk next to this file."""
+        if _TEMPLATE_PATH_OVERRIDE:
+            with open(_TEMPLATE_PATH_OVERRIDE, 'r', encoding='utf-8') as f:
+                return cls(yaml.safe_load(f))
+
         # Try Gio gresource (only present in the GTK build).
         try:
             from gi.repository import Gio
@@ -108,7 +212,8 @@ class Processor:
             data = yaml.safe_load(gbytes.get_data().decode('utf-8'))
             return cls(data)
         except Exception:
-            pass
+            # The GTK build is optional; any gresource failure falls through to disk.
+            pass  # nosec B110
 
         # Fall back to the YAML file on disk. Search order:
         #   1. PyInstaller bundle: _MEIPASS/data/edgepacks-template.yml
@@ -172,6 +277,19 @@ class Processor:
             _as_dict(entry).get('display_name') or key
             for key, entry in self.section('os_variant').items()
         ]
+
+    def tsn_nic_device_ids(self) -> dict:
+        """``{pci_device_id: display_name}`` from hardware_ids.tsn_nic.devices."""
+        return _parse_device_id_map(self.entry('hardware_ids', 'tsn_nic').get('devices'))
+
+    def tsn_nic_drivers(self) -> list:
+        """Driver names that imply TSN capability, from hardware_ids.tsn_nic.drivers."""
+        drivers = self.entry('hardware_ids', 'tsn_nic').get('drivers') or []
+        return [str(d).strip() for d in drivers if str(d).strip()]
+
+    def ipu_device_ids(self) -> dict:
+        """``{pci_device_id: display_name}`` from hardware_ids.ipu.devices."""
+        return _parse_device_id_map(self.entry('hardware_ids', 'ipu').get('devices'))
 
     def detect_platform(self, cpu_model: str | None = None):
         """Match the host CPU model name against platforms[].model_names keywords.
@@ -388,6 +506,20 @@ class Processor:
         if not os_key:
             return None
         return prereqs_by_os.get(os_key) or None
+
+    def profile_debconf_selections(self, profile_key: str) -> list[dict]:
+        """Return the 'debconf_selections' list for a base-profile or add-on profile key.
+
+        Each entry is a dict with 'package', 'question', 'type' and 'value' —
+        the four fields of a debconf-set-selections line. Unlike
+        'prerequisites' this is not keyed by os_variant: the answer describes
+        the target hardware configuration, not the distribution.
+        """
+        entry = self.entry('profiles', profile_key) or self.entry('base-profiles', profile_key)
+        selections = entry.get('debconf_selections')
+        if not isinstance(selections, list):
+            return []
+        return [s for s in selections if isinstance(s, dict)]
 
     def compatible_profiles(
         self,

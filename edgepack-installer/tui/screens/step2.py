@@ -103,7 +103,7 @@ class Step2Screen(_ButtonNavMixin, BaseWizardScreen):
     BINDINGS = [
         Binding("f1",        "app.show_about",     "About", show=True),
         Binding("tab",       "focus_next_smart",   "Next", show=True),
-        Binding("shift+tab", "app.focus_previous", "Prev", show=True),
+        Binding("shift+tab", "focus_previous_smart", "Prev", show=True),
         Binding("space",     "press_focused",      "Select", show=True,  priority=True),
         Binding("left",      "focus_prev_button",  "",     show=False),
         Binding("right",     "focus_next_button",  "",     show=False),
@@ -115,35 +115,52 @@ class Step2Screen(_ButtonNavMixin, BaseWizardScreen):
     # ------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        with Vertical(id="step2-layer-container"):
+            with Vertical(id="step2-base"):
+                yield Header()
 
-        with Vertical(id="step2-outer"):
-            yield Static("Step 2 of 4 — Review Packages", id="step2-title")
-            yield Rule()
+                with Vertical(id="step2-outer"):
+                    yield Static("Step 2 of 4 — Review Packages", id="step2-title")
+                    yield Rule()
 
-            # Locked base-profile packages
-            with Vertical(id="s2-base-box"):
-                pass  # populated in on_mount
+                    # Locked base-profile packages
+                    with Vertical(id="s2-base-box"):
+                        pass  # populated in on_mount
 
-            # Optional add-ons scroll list
-            yield Static("Optional add-ons", id="s2-addons-label")
-            with ScrollableContainer(id="s2-addons-scroll"):
-                yield Vertical(id="s2-addons-rows")
+                    # Optional add-ons scroll list
+                    yield Static("Optional add-ons", id="s2-addons-label")
+                    with ScrollableContainer(id="s2-addons-scroll"):
+                        yield Vertical(id="s2-addons-rows")
 
-            # Description panel — updates as add-on checkboxes receive focus
-            with Vertical(id="s2-about-box"):
-                yield Static(self.DEFAULT_ABOUT, id="s2-about-text")
+                    # Description panel — updates as add-on checkboxes receive focus
+                    with Vertical(id="s2-about-box"):
+                        yield Static(self.DEFAULT_ABOUT, id="s2-about-text")
 
-            # Running package summary
-            yield Static("", id="s2-selected-summary", markup=True)
+                    # Running package summary
+                    yield Static("", id="s2-selected-summary", markup=True)
 
-            yield Rule()
+                    yield Rule()
 
-            with Horizontal(id="step2-actions"):
-                yield Button("← Back", id="btn-back")
-                yield Button("Continue →", variant="primary", id="btn-continue")
+                    with Horizontal(id="step2-actions"):
+                        yield Button("← Back", id="btn-back")
+                        yield Button("Continue →", variant="primary", id="btn-continue")
 
-        yield Footer()
+                yield Footer()
+
+            with Vertical(id="ipu-dialog"):
+                yield Static("IPU Add-on Selected", id="ipu-title")
+                yield Rule()
+                yield Static("Warning:", id="ipu-warning")
+                yield Static(
+                    "The IPU add-on is installed using the preseed machanisms where "
+                    "it will pre-setup with a singular pre-canned PTL IPU7 CRB + isx031 GMSL configurations."
+                    "For more IPU installation details, kindly refer to:"
+                    "https://developer.robotics.intel.com/development-stack/components/sensors/cameras/gmsl/index.html "
+                    "for more details.",
+                    id="ipu-msg",
+                )
+                with Horizontal(id="ipu-actions"):
+                    yield Button("OK", variant="primary", id="btn-ipu-ok")
 
     # ------------------------------------------------------------------
     # Mount — populate dynamic sections
@@ -269,6 +286,33 @@ class Step2Screen(_ButtonNavMixin, BaseWizardScreen):
             else:
                 self.query_one("#btn-continue", Button).focus()
 
+    def action_focus_next_smart(self) -> None:
+        if self._ipu_overlay_visible():
+            self.query_one("#btn-ipu-ok", Button).focus()
+            return
+        super().action_focus_next_smart()
+
+    def action_focus_previous_smart(self) -> None:
+        if self._ipu_overlay_visible():
+            self.query_one("#btn-ipu-ok", Button).focus()
+            return
+        self.app.action_focus_previous()
+
+    def action_focus_prev_button(self) -> None:
+        if self._ipu_overlay_visible():
+            self.query_one("#btn-ipu-ok", Button).focus()
+            return
+        self._move_button_focus(-1)
+
+    def action_focus_next_button(self) -> None:
+        if self._ipu_overlay_visible():
+            self.query_one("#btn-ipu-ok", Button).focus()
+            return
+        self._move_button_focus(1)
+
+    def _ipu_overlay_visible(self) -> bool:
+        return self.query_one("#ipu-dialog", Vertical).display
+
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
@@ -300,6 +344,14 @@ class Step2Screen(_ButtonNavMixin, BaseWizardScreen):
             app.processor, app.selected_profile, addons, app.detected_platform_key, app.detected_os_key
         )
         self._refresh_summary()
+        if event.value and profile_key == "ipu":
+            self.query_one("#ipu-dialog", Vertical).display = True
+            self.query_one("#btn-ipu-ok", Button).focus()
+
+    @on(Button.Pressed, "#btn-ipu-ok")
+    def on_ipu_overlay_ok(self) -> None:
+        self.query_one("#ipu-dialog", Vertical).display = False
+        self.query_one("#addon-cb-ipu", AddonCheckbox).focus()
 
     @on(Button.Pressed, "#btn-back")
     def on_back(self) -> None:
@@ -320,4 +372,3 @@ class Step2Screen(_ButtonNavMixin, BaseWizardScreen):
         self.query_one("#s2-selected-summary", Static).update(
             f"[bold]Selected:[/bold]  {pkg_str}"
         )
-

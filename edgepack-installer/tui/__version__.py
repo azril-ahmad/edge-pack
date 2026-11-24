@@ -10,4 +10,4 @@
 #   MAJOR — incremented on breaking changes to the YAML manifest format
 #   MINOR — incremented on feature/fix releases within the same manifest format
 
-__version__ = "2026.2"
+__version__ = "2026.3"

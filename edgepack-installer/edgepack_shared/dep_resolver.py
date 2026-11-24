@@ -8,21 +8,31 @@
 #
 # For each top-level package it:
 #   1. Calls "apt show <pkg>" to get the available version and Depends line.
-#   2. Recursively expands intel-edge* dependencies (full transitive closure).
-#   3. For each intel-edge* package found, also records its direct
-#      version-constrained non-intel-edge deps (e.g. rpc-go) — pinned to
-#      the exact version from the Depends line, or to the currently available
-#      version when only a range constraint is given.  Transitive deps of
-#      those non-intel-edge packages are left for apt to resolve on its own.
+#   2. Recursively expands intel-edge* dependencies (full transitive closure),
+#      pinning each to the version the EdgePack repo offers.
+#   3. Records non-intel-edge deps only when the Depends line pins them with
+#      an exact '=' (e.g. rpc-go), since apt would otherwise pick a newer
+#      incompatible version from another source. Range constraints (>=, <=)
+#      are deliberately left unpinned so apt can still find a solution that
+#      satisfies every package in the transaction.
 #
 # Output: one "name=version" (or bare "name") per line, consumed by $PKGS
 # in the install shell script.
 #
 # SPDX-License-Identifier: MIT
 
+import os
 import re
-import subprocess  # nosec B404 - reviewed: only used with list-form args (no shell=True), fixed apt/dpkg commands, no untrusted input passed to a shell
+# Reviewed: list-form args only (no shell=True), fixed apt command, names validated below.
+import subprocess  # nosec B404
 import sys
+
+
+_PACKAGE_NAME = re.compile(r"[a-z0-9][a-z0-9+.-]+(?::[a-z0-9]+)?\Z")
+
+
+def valid_package_name(name):
+    return isinstance(name, str) and _PACKAGE_NAME.fullmatch(name) is not None
 
 
 def _apt_show(pkg):
@@ -30,15 +40,16 @@ def _apt_show(pkg):
     # parse normally. Only a failure to *run* apt at all (missing binary, hung
     # process past the timeout, etc.) is treated as fatal — that must abort
     # loudly rather than silently resolve to an empty/incomplete package list.
+    if not valid_package_name(pkg):
+        raise ValueError(f"Invalid package name: {pkg!r}")
     try:
-        r = subprocess.run(
+        r = subprocess.run(  # nosec B603
             ["/usr/bin/apt", "show", pkg],
             capture_output=True, text=True, timeout=30
         )
-        return r.stdout
     except Exception as e:
-        print(f"dep_resolver: 'apt show {pkg}' failed to run: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"'apt show {pkg}' failed to run: {e}") from e
+    return r.stdout
 
 
 def _get_version(out):
@@ -76,15 +87,15 @@ pkgs = {}     # name -> version string (empty means unversioned)
 def resolve(pkg, forced_version=""):
     """Add pkg to pkgs and recurse into dependencies.
 
-    - intel-edge* deps: always recursed (full transitive closure pinned),
-      and their direct version-constrained deps are also added to pkgs.
-    - Non-intel-edge deps of intel-edge* packages: added to pkgs with their
-      pinned version but NOT recursed into — transitive deps of those packages
-      are left for apt to resolve on its own.
-    - Unconstrained deps (no version spec at all): left for apt to resolve.
+    - intel-edge* deps: always recursed, pinned to the repo's version.
+    - Non-intel-edge deps pinned with an exact '=': recorded at that version,
+      not recursed into — their own deps are left for apt.
+    - Everything else (range-constrained or unconstrained): left for apt, so
+      pinning one package's '>=' dep cannot block another package's exact
+      requirement for a different version of that same dep.
     """
-    if not pkg or not isinstance(pkg, str):
-        return  # guard against empty or malformed package names
+    if not valid_package_name(pkg):
+        raise ValueError(f"Invalid package name: {pkg!r}")
     if pkg in seen:
         return
     seen.add(pkg)
@@ -94,19 +105,26 @@ def resolve(pkg, forced_version=""):
         if dep_name.startswith("intel-edge"):
             resolve(dep_name)
         elif dep_op == "=" and dep_name not in seen:
-            # Exact pin from Depends line — record it, no further recursion.
             seen.add(dep_name)
             pkgs[dep_name] = dep_ver
-        elif dep_op and dep_name not in seen:
-            # Range-constrained dep — pin to available version, no further recursion.
-            seen.add(dep_name)
-            pkgs[dep_name] = _get_version(_apt_show(dep_name))
-        # No constraint: let apt resolve freely; do not add to pkgs.
 
 
 if __name__ == "__main__":  # guard needed so this module is importable (e.g. for fuzzing/tests)
-    for p in sys.argv[1:]:
-        resolve(p)
+    try:
+        for p in sys.argv[1:]:
+            resolve(p)
+    except (ValueError, RuntimeError) as e:
+        print(f"dep_resolver: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    for name, ver in pkgs.items():
-        print(name + ("=" + ver if ver else ""))
+    try:
+        for name, ver in pkgs.items():
+            print(name + ("=" + ver if ver else ""))
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # The shell owning our command-substitution pipe went away (e.g. the
+        # user cancelled the install). Point stdout at devnull so the
+        # interpreter's shutdown flush cannot fail and print a traceback.
+        with open(os.devnull, "w") as devnull:
+            os.dup2(devnull.fileno(), sys.stdout.fileno())
+        sys.exit(1)
