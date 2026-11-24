@@ -17,7 +17,10 @@ capabilities needed for a particular system or workload.
 	</a>
 </p>
 
-*<mark>**[!NOTE]**</mark> Edge Pack is currently available as a **Tech Preview**.*
+>📌 **Note:** 
+> Edge Pack is currently available as a technical preview for evaluation purposes, we do not
+> recommend this early version for use in production environments.
+
 
 ## What Edge Pack Provides
 
@@ -28,18 +31,21 @@ capabilities needed for a particular system or workload.
 
 ### Base Profiles
 
-| Profile | Name | Description |
-|---|---|---|
-| `base-standard` | Intel Edge Base Profile | Graphics and media software with AI compute support |
+| Profile         | Name                    | Description                                   |
+|-----------------|-------------------------|-----------------------------------------------|
+| `intel-edge-base-standard` | Intel Edge Base Profile | Enables core Intel graphics/media packages, including the platform-enablement Dynamic Kernel Module Support driver and AI Compute Runtime engine for Ubuntu LTS |
+| `intel-edge-base-realtime` | Intel Edge Base Realtime Profile | Enables core base funtionality with realtime features for Ubuntu26.04 LTS |
 
 ### Add-on Profiles
 
 | Profile | Name | Description |
-|---|---|---|
-| `ffmpeg` | FFmpeg | FFmpeg multimedia framework with Intel GPU support |
-| `gstreamer` | GStreamer | GStreamer multimedia framework with Intel GPU support |
-| `npu` | NPU | Software to enable Intel's Neural Processing Unit (NPU) on Edge platforms |
-| `manageability` | Manageability | Software to enable Intel vPro manageability on Edge platforms |
+|-----------------|---------------|---------------------------------------------------------|
+| `intel-edge-media-ffmpeg` | FFmpeg | FFmpeg multimedia framework with Intel GPU support |
+| `intel-edge-media-gst` | GStreamer | GStreamer multimedia framework with Intel GPU support |
+| `intel-edge-npu` | NPU | Enables Intel's Neural Processing Unit (NPU) technology on edge platforms. |
+| `intel-edge-manageability` | Manageability | Enables Intel® vPro® manageability on edge platforms. |
+| `intel-edge-ipu` | IPU | Enables Intel's Image Processing Unit (IPU) technology on Edge platforms. |
+| `intel-edge-tsn` | TSN | Enables Intel's Time-Sensitive Networking (TSN) technology on Edge platforms. |
 
 
 ## Supported Platforms
@@ -50,9 +56,10 @@ capabilities needed for a particular system or workload.
 | Linux Distro | Fresh Ubuntu 24.04.5.1 (Desktop), Ubuntu 26.04.1 (Desktop) |
 | Kernel | Ubuntu Kernel 7.0+ generic |
 
-The current installer manifest disables the realtime base profile. See the
-[system requirements](docs/user-guide/get-started/system-requirements.md) for
-the distinction from the release instructions' Ubuntu 26.04 realtime support.
+Currently, Edge Pack supports fresh Ubuntu Desktop LTS 24.04.5.1 (Noble) and LTS 26.04.1 (Resolute) installations,
+deployed on Intel® Core™ Ultra Series 3 (formerly codenamed as Panther Lake) and
+Intel® Core™ Series 3.
+See [system requirements](./get-started/system-requirements.md) for more details.
 
 ### Supported SKUs
 
@@ -83,20 +90,12 @@ progress.
 Public installations use <https://apt.repos.intel.com/edgepack/> and the
 [public GitHub releases](https://github.com/open-edge-platform/edge-pack/releases).
 
-```bash
-# 1. Verify the downloaded binary against its published checksum
-sha256sum -c edgepack-installer.sha256 &&
-
-# 2. Run the interactive wizard only when verification succeeds
-sudo ./edgepack-installer
-```
-
 See the [Get Started guide](docs/user-guide/get-started.md) for a comparison of the
 methods and the [system requirements](docs/user-guide/get-started/system-requirements.md).
 To convert a supported Ubuntu Desktop installation to a console-only system, see the
 [headless Ubuntu guide](docs/user-guide/ubuntu-desktop-remove-display.md).
 
-The following video demonstrates the TUI workflow:
+The following video demonstrates the Edge Pack TUI installer workflow:
 
 https://github.com/user-attachments/assets/ef562165-f427-434d-a472-1244b3e430f6
 
